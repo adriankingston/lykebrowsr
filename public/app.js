@@ -62,6 +62,7 @@
     window.scrollTo(0, 0);
     if (!parts.length) return renderHome();
     if (parts[0] === 'search') return renderSearch(parts[1], parts.slice(2).join('/'));
+    if (parts[0] === 'data' && parts[1]) return renderDataset(parts[1]);
     if (RESULT_KEY[parts[0]] && parts[1]) return renderEntity(parts[0], parts[1]);
     renderHome();
   }
@@ -98,7 +99,7 @@
         document.getElementById('datasets').innerHTML = `
           <h2 class="sect">Local datasets</h2>
           <div class="rows">${sets.map((s) => `
-            <a class="row" href="/api/data?set=${esc(s.name)}" target="_blank">
+            <a class="row" href="#/data/${esc(s.name)}">
               <span class="r-name">${esc(s.name)}</span>
               <span class="r-end">${(s.bytes / 1024).toFixed(1)} KB</span>
             </a>`).join('')}
@@ -144,6 +145,58 @@
       <span class="r-sub">${esc(bits.filter(Boolean).join(' · '))}</span>
       <span class="r-end">${it.score != null ? it.score : ''}</span>
     </a>`;
+  }
+
+  // --- Local datasets --------------------------------------------------------
+  async function renderDataset(name) {
+    loading(`Loading ${name}`);
+    try {
+      const data = await api(`/api/data?set=${encodeURIComponent(name)}`);
+      // A track list (anything with .tracks[]) gets the listening-data view;
+      // any other shape falls back to raw JSON so nothing dead-ends.
+      if (!Array.isArray(data.tracks)) {
+        view.innerHTML = `
+          <span class="ent-kind">Dataset</span>
+          <h1 class="ent-title">${esc(name)}</h1>
+          <pre class="raw">${esc(JSON.stringify(data, null, 2)).slice(0, 20000)}</pre>`;
+        return;
+      }
+      const tracks = data.tracks;
+      const byArtist = new Map();
+      let secs = 0;
+      for (const t of tracks) {
+        const a = (t.artist || '(unknown)').trim();
+        byArtist.set(a, (byArtist.get(a) || 0) + 1);
+        const p = String(t.length || '').split(':').map(Number);
+        if (p.length === 2) secs += p[0] * 60 + p[1];
+      }
+      const top = [...byArtist.entries()].sort((x, y) => y[1] - x[1]).slice(0, 30);
+      const searchHref = (a) => `#/search/artist/${encodeURIComponent(a)}`;
+
+      view.innerHTML = `
+        <span class="ent-kind">Dataset</span>
+        <h1 class="ent-title">${esc(name)}</h1>
+        <p class="ent-meta">${esc(data.source || '')}${data.extracted ? ` · extracted ${esc(data.extracted.slice(0, 10))}` : ''}</p>
+        <p class="ent-meta">${tracks.length} tracks · ${byArtist.size} artists · ${(secs / 3600).toFixed(1)} hours</p>
+        <h2 class="sect">Top artists</h2>
+        <div class="rows">${top.map(([a, n]) => `
+          <a class="row" href="${searchHref(a)}">
+            <span class="r-name">${esc(a)}</span>
+            <span class="r-end">${n} track${n === 1 ? '' : 's'}</span>
+          </a>`).join('')}</div>
+        <h2 class="sect">All tracks</h2>
+        <table class="tracks">
+          <tr><th></th><th>Title</th><th>Artist</th><th>Album</th><th></th></tr>
+          ${tracks.map((t) => `
+            <tr>
+              <td class="n">${esc(t.n ?? '')}</td>
+              <td>${esc(t.title)}</td>
+              <td><a href="${searchHref(t.artist || '')}">${esc(t.artist || '')}</a></td>
+              <td class="r-sub">${esc(t.album || '')}</td>
+              <td class="len">${esc(t.length || '')}</td>
+            </tr>`).join('')}
+        </table>`;
+    } catch (e) { fail(e); }
   }
 
   // --- Entity pages ----------------------------------------------------------
