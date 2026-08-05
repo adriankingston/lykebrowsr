@@ -165,7 +165,8 @@ async function apiSearch(req, res, url) {
 async function apiLookup(req, res, url) {
   const id = (url.searchParams.get('id') || '').trim();
   const type = url.searchParams.get('type') || 'artist';
-  const inc = url.searchParams.get('inc') || '';
+  // `+` in a query string decodes to a space — turn it back before validating.
+  const inc = (url.searchParams.get('inc') || '').replace(/ /g, '+');
   if (!MBID_RE.test(id)) return sendJson(res, 400, { error: 'Invalid MBID' });
   if (!ENTITY_TYPES.has(type)) return sendJson(res, 400, { error: 'Unknown type' });
   if (!INC_RE.test(inc)) return sendJson(res, 400, { error: 'Bad inc' });
@@ -181,7 +182,7 @@ async function apiBrowse(req, res, url) {
   if (!linkKey) return sendJson(res, 400, { error: `Need one of: ${links.join(', ')}` });
   const linkId = url.searchParams.get(linkKey).trim();
   if (!MBID_RE.test(linkId)) return sendJson(res, 400, { error: 'Invalid MBID' });
-  const inc = url.searchParams.get('inc') || '';
+  const inc = (url.searchParams.get('inc') || '').replace(/ /g, '+');
   if (!INC_RE.test(inc)) return sendJson(res, 400, { error: 'Bad inc' });
   const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit')) || 100));
   const offset = Math.max(0, Number(url.searchParams.get('offset')) || 0);
