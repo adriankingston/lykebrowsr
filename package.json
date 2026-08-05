@@ -1,0 +1,13 @@
+{
+  "name": "musikbrowsr",
+  "version": "0.1.0",
+  "private": true,
+  "description": "dig into the detail — a MusicBrainz catalogue browser, companion to musikrawlr",
+  "license": "MIT",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
