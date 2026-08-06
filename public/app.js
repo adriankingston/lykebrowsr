@@ -3,6 +3,14 @@
 //          #/search/<type>/<query>  search results
 //          #/<type>/<mbid>          entity page
 (() => {
+  // The sister graph app: local port in dev, the Railway deploy in production.
+  const RAWLR = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+    ? 'http://localhost:4700'
+    : 'https://musikrawlr-production.up.railway.app';
+  document.querySelectorAll('a[data-rawlr]').forEach((a) => {
+    a.href = RAWLR + (a.dataset.rawlr || '');
+  });
+
   const view = document.getElementById('view');
   const form = document.getElementById('search-form');
   const qInput = document.getElementById('q');
@@ -84,7 +92,7 @@
         <h1>dig into the detail</h1>
         <p>The catalogue behind the graph — search any artist, album, recording or
            label, and follow the credits wherever they lead.
-           Companion to <a href="http://localhost:4700" target="_blank" rel="noopener">musikrawlr</a>.</p>
+           Companion to <a href="${RAWLR}" target="_blank" rel="noopener">musikrawlr</a>.</p>
         <p class="starters">
           <button class="chip" data-go="#/artist/149e6720-4e4a-41a4-afca-6d29083fc091">Bad Religion</button>
           <button class="chip" data-go="#/artist/25302723-b24f-4d0d-ab5d-1b4ae0195ac6">Swingin’ Utters</button>
@@ -469,7 +477,7 @@
       strip.innerHTML = `<strong>${esc(a.mbName)}</strong>
         <span class="r-sub">${esc([(a.genres || [])[0]?.name, a.country].filter(Boolean).join(' · '))}</span>
         <a href="#/artist/${a.id}">open artist →</a>
-        <a href="http://localhost:4700/#seed=${a.id}" target="_blank" rel="noopener">open in musikrawlr ↗</a>`;
+        <a href="${RAWLR}/#seed=${a.id}" target="_blank" rel="noopener">open in musikrawlr ↗</a>`;
     });
     cy.on('tap', (ev) => { if (ev.target === cy) { const s = document.getElementById('gsel'); if (s) s.hidden = true; } });
     cy.on('mouseover', 'edge', (ev) => ev.target.addClass('hl'));
@@ -683,7 +691,7 @@
       <div id="head">${entHead('Artist', esc(a.name), [
         a.type, a.area?.name, lifespan(a['life-span']), a.disambiguation,
       ], null)}</div>
-      <p class="ent-meta"><a href="http://localhost:4700/#seed=${id}" target="_blank" rel="noopener">open in musikrawlr ↗</a></p>
+      <p class="ent-meta"><a href="${RAWLR}/#seed=${id}" target="_blank" rel="noopener">open in musikrawlr ↗</a></p>
       ${genres.length ? `<div class="tags">${genres.map((g) => `<span class="tag">${esc(g.name)}</span>`).join('')}</div>` : ''}
       ${memberList('Members', members)}
       ${memberList('Bands', bands)}
