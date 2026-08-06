@@ -150,6 +150,9 @@ a:hover { color: var(--accent); }
   margin: 0 auto;
   padding: 26px 20px 60px;
 }
+/* Visual dataset views (timeline, bands, graph, styles) escape the reading
+   column — maps want every pixel the window has. */
+#view.wide { max-width: none; padding: 26px 28px 60px; }
 .loading { color: var(--muted); padding: 40px 0; }
 .error { color: var(--warn); padding: 40px 0; }
 
@@ -328,8 +331,9 @@ table.tracks td.len { text-align: right; }
 
 #dv-graph {
   width: 100%;
-  height: 72vh;
-  min-height: 420px;
+  /* Nearly the whole viewport tall — the page header scrolls away and the
+     tabs sit above the fold; the map is the point of these pages. */
+  height: max(calc(100vh - 150px), 600px);
   background: radial-gradient(90% 80% at 50% 40%, #16262d 0%, var(--bg) 70%);
   border: 1px solid var(--line);
   margin-top: 14px;

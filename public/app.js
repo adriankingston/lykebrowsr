@@ -60,6 +60,9 @@
   function route() {
     const parts = decodeURIComponent(location.hash.slice(1)).split('/').filter(Boolean);
     window.scrollTo(0, 0);
+    // Visual dataset views go full-bleed; everything else keeps the column.
+    view.classList.toggle('wide',
+      parts[0] === 'data' && ['timeline', 'bands', 'graph', 'styles'].includes(parts[2]));
     if (!parts.length) return renderHome();
     if (parts[0] === 'search') return renderSearch(parts[1], parts.slice(2).join('/'));
     if (parts[0] === 'data' && parts[1]) return renderDataset(parts[1], parts[2] || 'overview');
