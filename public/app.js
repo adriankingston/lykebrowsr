@@ -1,4 +1,4 @@
-// musikbrowsr — hash-routed catalogue browser over the local MB proxy.
+// lykebrowsr — hash-routed catalogue browser over the local MB proxy.
 // Routes:  #/                       home
 //          #/search/<type>/<query>  search results
 //          #/<type>/<mbid>          entity page

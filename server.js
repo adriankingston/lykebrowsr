@@ -1,4 +1,4 @@
-// musikbrowsr — local server + polite MusicBrainz proxy.
+// lykebrowsr — local server + polite MusicBrainz proxy.
 //
 // Companion to musikrawlr (the band↔musician knowledge graph): where the graph
 // browses relationships, this browses the catalogue — artists, release groups,
@@ -34,7 +34,7 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 const CACHE_DIR = path.join(__dirname, '.cache');
 const DATA_DIR = path.join(__dirname, 'data');
 const MB = 'https://musicbrainz.org/ws/2/';
-const UA = `musikbrowsr/0.1 (${process.env.MB_CONTACT || 'no-contact-set; local dev'})`;
+const UA = `lykebrowsr/0.1 (${process.env.MB_CONTACT || 'no-contact-set; local dev'})`;
 
 fs.mkdirSync(CACHE_DIR, { recursive: true });
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -368,7 +368,7 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`\n  musikbrowsr → http://localhost:${PORT}\n`);
+  console.log(`\n  lykebrowsr → http://localhost:${PORT}\n`);
   if (!process.env.MB_CONTACT) {
     console.log('  ⚠  No MB_CONTACT in .env — MusicBrainz asks for contact info in the User-Agent.\n');
   }

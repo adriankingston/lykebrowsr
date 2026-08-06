@@ -32,7 +32,7 @@ const CACHE_DIR = path.join(__dirname, '.cache');
 const OUT = path.join(__dirname, 'data', 'liked-music-enriched.json');
 const LOG = path.join(__dirname, 'resolve.log');
 const MB = 'https://musicbrainz.org/ws/2/';
-const UA = `musikbrowsr/0.1 (${process.env.MB_CONTACT || 'no-contact-set; local dev'})`;
+const UA = `lykebrowsr/0.1 (${process.env.MB_CONTACT || 'no-contact-set; local dev'})`;
 fs.mkdirSync(CACHE_DIR, { recursive: true });
 
 const log = (s) => {

@@ -1,4 +1,4 @@
-# musikbrowsr
+# lykebrowsr
 
 **dig into the detail** — a MusicBrainz catalogue browser, and companion to
 [musikrawlr](https://github.com/adriankingston/musikrawlr): where the graph

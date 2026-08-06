@@ -1,4 +1,4 @@
-# musikbrowsr — next features plan
+# lykebrowsr — next features plan
 
 Three pieces of work, in suggested build order (2 → 1 → 3; the deep-link is an
 hour, the genre backfill feeds the style map, and the style map is the big one).
@@ -30,22 +30,22 @@ enriched file. Normalise names through a small synonym map ("Hardcore" →
 "hardcore punk", "Punk" → "punk rock" etc.) so backfilled tags line up with
 MB's vocabulary. ~61 artists × ≤3 calls ≈ minutes, not hours.
 
-## 2. musikrawlr ↔ musikbrowsr deep links
+## 2. musikrawlr ↔ lykebrowsr deep links
 
 musikrawlr has no URL scheme yet (was on its "obvious next steps" list).
 
 - **musikrawlr**: on boot, parse `#seed=<mbid>` → fetch the artist → `addSeed`
   it (reusing the existing search-pick path). ~20 lines in app.js. Works
   locally and, once pushed, on the Railway deploy for free.
-- **musikbrowsr → musikrawlr**: artist pages and graph nodes get an
+- **lykebrowsr → musikrawlr**: artist pages and graph nodes get an
   "open in musikrawlr ↗" link → `http://localhost:4700/#seed=<mbid>`.
   (Graph: a small link in a node-tap info strip rather than hijacking the
   tap-to-open-artist behaviour — tap = artist page, link = graph.)
-- **musikrawlr → musikbrowsr**: symmetric panel link
+- **musikrawlr → lykebrowsr**: symmetric panel link
   `http://localhost:4800/#/artist/<mbid>` — the graph's answer to "now show me
   the records".
 - Host handling: emit links against `localhost` when the page itself is on
-  localhost; on the Railway deploy, hide the musikbrowsr link (it isn't
+  localhost; on the Railway deploy, hide the lykebrowsr link (it isn't
   deployed) unless/until it is.
 
 ## 3. Style relationship map — "how does sludge relate to noise?"
