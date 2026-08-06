@@ -205,7 +205,7 @@
     const resolved = enr ? Object.keys(enr.tracks || {}).length : 0;
     const status = !enr ? '<span class="dtab-note">resolving not started</span>'
       : enr.phase !== 'complete' ? `<span class="dtab-note">resolving… ${resolved} tracks so far — refresh for more</span>` : '';
-    return `<nav class="dtabs">${tab('overview', 'Overview')}${tab('timeline', 'Timeline')}${tab('bands', 'Bands')}${tab('graph', 'Graph')}${status}</nav>`;
+    return `<nav class="dtabs">${tab('overview', 'Overview')}${tab('timeline', 'Timeline')}${tab('bands', 'Bands')}${tab('graph', 'Graph')}${tab('styles', 'Styles')}${status}</nav>`;
   }
 
   async function renderDataset(name, sub) {
@@ -227,6 +227,7 @@
       if (sub === 'timeline') return viewTimeline(head, d);
       if (sub === 'bands') return viewBands(head, d);
       if (sub === 'graph') return viewGraph(head, d);
+      if (sub === 'styles') return viewStyles(head, d);
       viewOverview(head, d);
     } catch (e) { fail(e); }
   }
@@ -407,7 +408,8 @@
       <p class="ent-meta">${connected.size} of ${artists.length} liked artists are linked by shared members or
         collaborations (${edges.size} connections). Unconnected artists are hidden — drag, scroll to zoom, click a node
         to open the artist.</p>
-      <div id="dv-graph"></div>`;
+      <div id="dv-graph"></div>
+      <div id="gsel" class="gsel" hidden></div>`;
 
     const els = [];
     for (const a of artists) {
@@ -454,9 +456,177 @@
     // the viewport math is garbage (musikrawlr lesson).
     const ro = new ResizeObserver(() => { cy.resize(); cy.fit(undefined, 30); });
     ro.observe(document.getElementById('dv-graph'));
-    cy.on('tap', 'node', (ev) => { location.hash = `#/artist/${ev.target.id()}`; });
+    // Tap selects and offers the destinations; instant navigation away from a
+    // graph you're mid-exploring proved annoying in musikrawlr.
+    cy.on('tap', 'node', (ev) => {
+      const a = byId.get(ev.target.id());
+      const strip = document.getElementById('gsel');
+      if (!a || !strip) return;
+      strip.hidden = false;
+      strip.innerHTML = `<strong>${esc(a.mbName)}</strong>
+        <span class="r-sub">${esc([(a.genres || [])[0]?.name, a.country].filter(Boolean).join(' · '))}</span>
+        <a href="#/artist/${a.id}">open artist →</a>
+        <a href="http://localhost:4700/#seed=${a.id}" target="_blank" rel="noopener">open in musikrawlr ↗</a>`;
+    });
+    cy.on('tap', (ev) => { if (ev.target === cy) { const s = document.getElementById('gsel'); if (s) s.hidden = true; } });
     cy.on('mouseover', 'edge', (ev) => ev.target.addClass('hl'));
     cy.on('mouseout', 'edge', (ev) => ev.target.removeClass('hl'));
+  }
+
+  // How do the styles relate? Two edge families over one canvas:
+  //  - "in my library": two styles linked by every band tagged with both
+  //  - "lineage": Wikipedia/Wikidata origins, subgenres, influences, fusions
+  async function viewStyles(head, d) {
+    if (!d.enr) { view.innerHTML = `${head}<p class="loading">No resolved data yet.</p>`; return; }
+    let gg = null;
+    try { gg = await api('/api/data?set=genre-graph'); } catch { /* lineage not resolved yet */ }
+    const counts = new Map();
+    for (const t of d.liked.tracks) {
+      const k = primaryName(t.artist);
+      counts.set(k, (counts.get(k) || 0) + 1);
+    }
+    const stats = new Map(); // style → {tracks, bands:[{name,id,n}]}
+    const pair = new Map();  // "a|b" → {a, b, bands:[]}
+    for (const [name, a] of Object.entries(d.enr.artists || {})) {
+      if (!a.id) continue;
+      const n = counts.get(name) || 0;
+      const ss = (a.genres || []).slice(0, 4).map((g) => g.name.toLowerCase());
+      for (const s of ss) {
+        if (!stats.has(s)) stats.set(s, { tracks: 0, bands: [] });
+        stats.get(s).tracks += n;
+        stats.get(s).bands.push({ name, id: a.id, n });
+      }
+      for (let i = 0; i < ss.length; i++) {
+        for (let j = i + 1; j < ss.length; j++) {
+          const key = [ss[i], ss[j]].sort().join('|');
+          if (!pair.has(key)) pair.set(key, { a: ss[i], b: ss[j], bands: [] });
+          pair.get(key).bands.push(name);
+        }
+      }
+    }
+    const topByTracks = [...stats.entries()].sort((x, y) => y[1].tracks - x[1].tracks)
+      .map(([s]) => s).slice(0, PAL.length - 1);
+    // One-band, one-track styles are a fog of 100+ tiny nodes; keep the map
+    // to styles with some weight unless asked for everything.
+    const significant = (s) => {
+      const st = stats.get(s);
+      return st && (st.bands.length >= 2 || st.tracks >= 4);
+    };
+    const allCount = stats.size;
+
+    view.innerHTML = `${head}
+      <p class="ent-meta"><span id="st-count"></span>
+        <label class="stog"><input type="checkbox" id="st-lib" checked> in my library (shared bands)</label>
+        <label class="stog"><input type="checkbox" id="st-lin" ${gg ? 'checked' : 'disabled'}> lineage (Wikipedia/Wikidata)${gg ? '' : ' — run resolve-genres.js'}</label>
+        <label class="stog"><input type="checkbox" id="st-all"> all ${allCount} styles</label>
+      </p>
+      <p class="ent-meta st-key">lineage arrows: <span style="color:#ffd166">origin →</span>
+        <span style="color:#4aa8ff">subgenre →</span> <span style="color:#b78cff">influence →</span>
+        <span style="color:#ff6b8f">fusion</span> · grey nodes = neighbouring genres not in the library</p>
+      <div id="dv-graph"></div>
+      <div id="gsel" class="gsel" hidden></div>`;
+
+    const build = () => {
+      const showLib = document.getElementById('st-lib').checked;
+      const showLin = gg && document.getElementById('st-lin').checked;
+      const showAll = document.getElementById('st-all').checked;
+      const els = [];
+      const inGraph = new Set([...stats.keys()].filter((s) => showAll || significant(s)));
+      document.getElementById('st-count').textContent =
+        `${inGraph.size} of ${allCount} styles shown.`;
+      if (showLin) {
+        // The Wikidata sweep drags in every cousin of broad genres; an
+        // external genre earns a node only by BRIDGING ≥2 shown styles.
+        const deg = new Map();
+        for (const e of gg.edges) {
+          if (inGraph.has(e.from) && gg.styles[e.to]?.external) deg.set(e.to, (deg.get(e.to) || 0) + 1);
+          if (inGraph.has(e.to) && gg.styles[e.from]?.external) deg.set(e.from, (deg.get(e.from) || 0) + 1);
+        }
+        for (const [name, n] of deg) if (n >= 2) inGraph.add(name);
+      }
+      for (const s of inGraph) {
+        const st = stats.get(s);
+        els.push({ data: { id: s, label: s, tracks: st ? st.tracks : 0,
+          col: st ? styleColor(s, topByTracks) : '#4d5a63', ext: st ? 0 : 1 } });
+      }
+      if (showLib) {
+        for (const p of pair.values()) {
+          if (!inGraph.has(p.a) || !inGraph.has(p.b)) continue;
+          els.push({ data: { id: 'lib|' + p.a + '|' + p.b, source: p.a, target: p.b,
+            kind: 'lib', w: p.bands.length,
+            label: p.bands.length + ' band' + (p.bands.length === 1 ? '' : 's') } });
+        }
+      }
+      if (showLin) {
+        for (const e of gg.edges) {
+          if (!inGraph.has(e.from) || !inGraph.has(e.to)) continue;
+          els.push({ data: { id: e.type + '|' + e.from + '|' + e.to, source: e.from, target: e.to,
+            kind: e.type, label: e.type.replace('-of', '') } });
+        }
+      }
+      const cy = cytoscape({
+        container: document.getElementById('dv-graph'),
+        elements: els,
+        style: [
+          { selector: 'node', style: {
+            'background-color': 'data(col)',
+            label: 'data(label)',
+            color: '#e5edf0',
+            'font-family': 'Quantico, sans-serif',
+            'font-size': 12,
+            'text-valign': 'bottom',
+            'text-margin-y': 4,
+            width: (n) => n.data('ext') ? 10 : 14 + Math.sqrt(n.data('tracks')) * 2.4,
+            height: (n) => n.data('ext') ? 10 : 14 + Math.sqrt(n.data('tracks')) * 2.4,
+          } },
+          { selector: 'node[ext = 1]', style: { color: '#91a7b0', 'font-size': 10 } },
+          { selector: 'edge', style: { 'curve-style': 'bezier', 'font-size': 9,
+            color: '#91a7b0', 'text-opacity': 0, label: 'data(label)' } },
+          { selector: 'edge[kind = "lib"]', style: {
+            'line-color': '#3a5a68', width: (e) => Math.min(1 + e.data('w') * 0.8, 7) } },
+          { selector: 'edge[kind = "origin-of"]', style: {
+            'line-color': '#ffd166', width: 1.6, 'target-arrow-shape': 'triangle', 'target-arrow-color': '#ffd166' } },
+          { selector: 'edge[kind = "subgenre-of"]', style: {
+            'line-color': '#4aa8ff', width: 1.4, 'target-arrow-shape': 'triangle', 'target-arrow-color': '#4aa8ff' } },
+          { selector: 'edge[kind = "influenced"]', style: {
+            'line-color': '#b78cff', width: 1.2, 'line-style': 'dashed',
+            'target-arrow-shape': 'triangle', 'target-arrow-color': '#b78cff' } },
+          { selector: 'edge[kind = "fusion"]', style: {
+            'line-color': '#ff6b8f', width: 1.2, 'line-style': 'dotted' } },
+          { selector: 'edge:selected, edge.hl', style: { 'text-opacity': 1 } },
+          { selector: 'node:selected', style: { 'border-width': 2, 'border-color': '#fff' } },
+        ],
+        layout: { name: 'cose', idealEdgeLength: 120, nodeRepulsion: 200000, numIter: 2500, animate: false },
+        wheelSensitivity: 0.3,
+      });
+      const ro = new ResizeObserver(() => { cy.resize(); cy.fit(undefined, 30); });
+      ro.observe(document.getElementById('dv-graph'));
+      cy.on('mouseover', 'edge', (ev) => ev.target.addClass('hl'));
+      cy.on('mouseout', 'edge', (ev) => ev.target.removeClass('hl'));
+      cy.on('tap', 'node', (ev) => {
+        const s = ev.target.id();
+        const strip = document.getElementById('gsel');
+        const st = stats.get(s);
+        if (!strip) return;
+        strip.hidden = false;
+        if (!st) {
+          const wiki = gg?.styles?.[s]?.wiki;
+          strip.innerHTML = `<strong>${esc(s)}</strong> <span class="r-sub">not in the library</span>
+            ${wiki ? `<a href="https://en.wikipedia.org/wiki/${esc(wiki)}" target="_blank" rel="noopener">Wikipedia ↗</a>` : ''}`;
+          return;
+        }
+        const bands = st.bands.sort((x, y) => y.n - x.n).slice(0, 24);
+        strip.innerHTML = `<strong>${esc(s)}</strong>
+          <span class="r-sub">${st.tracks} liked tracks · ${st.bands.length} bands</span>
+          ${bands.map((b) => `<a href="#/artist/${b.id}">${esc(b.name)}</a>`).join('')}`;
+      });
+      cy.on('tap', (ev) => { if (ev.target === cy) { const s = document.getElementById('gsel'); if (s) s.hidden = true; } });
+    };
+    document.getElementById('st-lib').addEventListener('change', build);
+    document.getElementById('st-all').addEventListener('change', build);
+    const lin = document.getElementById('st-lin');
+    if (gg) lin.addEventListener('change', build);
+    build();
   }
 
   // --- Entity pages ----------------------------------------------------------
@@ -510,6 +680,7 @@
       <div id="head">${entHead('Artist', esc(a.name), [
         a.type, a.area?.name, lifespan(a['life-span']), a.disambiguation,
       ], null)}</div>
+      <p class="ent-meta"><a href="http://localhost:4700/#seed=${id}" target="_blank" rel="noopener">open in musikrawlr ↗</a></p>
       ${genres.length ? `<div class="tags">${genres.map((g) => `<span class="tag">${esc(g.name)}</span>`).join('')}</div>` : ''}
       ${memberList('Members', members)}
       ${memberList('Bands', bands)}

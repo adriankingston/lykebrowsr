@@ -97,7 +97,136 @@ const save = (st) => {
   fs.writeFileSync(OUT, JSON.stringify(st));
 };
 
+// --- Genre backfill (--genres): fill artists MB has no genre list for -------
+// Cascade: MB raw tags → Wikidata P136 → Discogs release styles → Last.fm
+// (only if LASTFM_API_KEY is set). Each verdict records its source.
+async function webFetch(url, headers = {}) {
+  const file = cachePathFor(url);
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* not cached */ }
+  const res = await fetch(url, { headers: { 'User-Agent': UA, ...headers } });
+  if (!res.ok) throw new Error(`Upstream ${res.status}`);
+  const data = await res.json();
+  fs.writeFileSync(file, JSON.stringify(data));
+  return data;
+}
+
+// Map non-MB vocabularies onto MB's where they differ predictably; anything
+// already in the MB genre whitelist passes through untouched.
+const SYNONYM = {
+  hardcore: 'hardcore punk', punk: 'punk rock', 'post punk': 'post-punk',
+  'noise': 'noise rock', 'garage': 'garage rock', 'metal': 'heavy metal',
+  'rock & roll': "rock 'n' roll", 'indie': 'indie rock',
+};
+
+async function mbGenreWhitelist() {
+  const names = new Set();
+  let offset = 0;
+  for (;;) {
+    const d = await mbFetch(`genre/all?limit=100&offset=${offset}`);
+    for (const g of d.genres || []) names.add(g.name.toLowerCase());
+    offset += 100;
+    if (offset >= (d['genre-count'] || 0)) break;
+  }
+  return names;
+}
+
+async function backfillGenres() {
+  const st = load();
+  const wl = await mbGenreWhitelist();
+  log(`genre backfill — whitelist ${wl.size} genres`);
+  const clean = (name) => {
+    const n = String(name || '').toLowerCase().trim();
+    if (wl.has(n)) return n;
+    if (SYNONYM[n] && wl.has(SYNONYM[n])) return SYNONYM[n];
+    return null; // junk tag ("seen live") or vocabulary we can't anchor
+  };
+  const gaps = Object.entries(st.artists).filter(([, a]) => a.id && !(a.genres || []).length);
+  log(`${gaps.length} artists lacking genres`);
+  let lastDiscogs = 0;
+  let filled = 0;
+
+  for (const [name, a] of gaps) {
+    let genres = [];
+    let rels = [];
+    try {
+      const d = await mbFetch(`artist/${a.id}?inc=tags+url-rels`);
+      rels = d.relations || [];
+      genres = (d.tags || [])
+        .map((t) => ({ name: clean(t.name), count: t.count, source: 'mb-tag' }))
+        .filter((g) => g.name && g.count > 0)
+        .sort((x, y) => y.count - x.count).slice(0, 5);
+    } catch (e) { log(`tags ${name}: ${e.message}`); }
+
+    if (!genres.length) {
+      const wd = rels.find((r) => r.type === 'wikidata' && r.url);
+      const qid = wd ? (wd.url.resource.match(/(Q\d+)/) || [])[1] : null;
+      if (qid) {
+        try {
+          const c = await webFetch(`https://www.wikidata.org/w/api.php?action=wbgetclaims&entity=${qid}&property=P136&format=json`);
+          const gids = (c.claims?.P136 || []).map((x) => x.mainsnak?.datavalue?.value?.id).filter(Boolean);
+          if (gids.length) {
+            const e = await webFetch(`https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${gids.join('|')}&props=labels&languages=en&format=json`);
+            genres = gids
+              .map((g) => ({ name: clean(e.entities?.[g]?.labels?.en?.value), count: 1, source: 'wikidata' }))
+              .filter((g) => g.name).slice(0, 5);
+          }
+        } catch (e) { log(`wikidata ${name}: ${e.message}`); }
+      }
+    }
+
+    if (!genres.length) {
+      const dg = rels.find((r) => r.type === 'discogs' && r.url);
+      const dgId = dg ? (dg.url.resource.match(/\/artist\/(\d+)/) || [])[1] : null;
+      if (dgId) {
+        try {
+          // Unauthenticated Discogs allows 25 req/min — space calls ≥2.5s.
+          const headers = process.env.DISCOGS_TOKEN
+            ? { Authorization: `Discogs token=${process.env.DISCOGS_TOKEN}` } : {};
+          const throttle = async () => {
+            const wait = lastDiscogs + 2600 - Date.now();
+            if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+            lastDiscogs = Date.now();
+          };
+          await throttle();
+          const rl = await webFetch(`https://api.discogs.com/artists/${dgId}/releases?sort=year&per_page=25`, headers);
+          const masters = (rl.releases || []).filter((r) => r.type === 'master' && r.role === 'Main').slice(0, 3);
+          const styleCount = {};
+          for (const m of masters) {
+            await throttle();
+            const md = await webFetch(`https://api.discogs.com/masters/${m.id}`, headers);
+            for (const s of [...(md.styles || []), ...(md.genres || [])]) {
+              const n = clean(s);
+              if (n) styleCount[n] = (styleCount[n] || 0) + 1;
+            }
+          }
+          genres = Object.entries(styleCount).sort((x, y) => y[1] - x[1]).slice(0, 5)
+            .map(([n, c]) => ({ name: n, count: c, source: 'discogs' }));
+        } catch (e) { log(`discogs ${name}: ${e.message}`); }
+      }
+    }
+
+    if (!genres.length && process.env.LASTFM_API_KEY) {
+      try {
+        const lf = await webFetch(`https://ws.audioscrobbler.com/2.0/?method=artist.gettoptags&mbid=${a.id}&api_key=${process.env.LASTFM_API_KEY}&format=json`);
+        genres = (lf.toptags?.tag || [])
+          .map((t) => ({ name: clean(t.name), count: t.count, source: 'lastfm' }))
+          .filter((g) => g.name && g.count >= 10)
+          .slice(0, 5);
+      } catch (e) { log(`lastfm ${name}: ${e.message}`); }
+    }
+
+    if (genres.length) {
+      a.genres = genres;
+      filled++;
+      log(`${name} ← ${genres.map((g) => g.name).join(', ')} (${genres[0].source})`);
+    }
+    save(st);
+  }
+  log(`genre backfill done — filled ${filled}/${gaps.length}`);
+}
+
 async function main() {
+  if (process.argv.includes('--genres')) return backfillGenres();
   const liked = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'liked-music.json'), 'utf8'));
   const st = load();
   log(`start — ${liked.tracks.length} tracks, ${Object.keys(st.tracks).length} already resolved`);
