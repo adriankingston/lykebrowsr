@@ -106,6 +106,15 @@ a:hover { color: var(--accent); }
   font-size: 18px;
   letter-spacing: .02em;
 }
+.lykenav a {
+  font-family: Zen Dots, Quantico, sans-serif;
+  font-size: 12px;
+  color: var(--accent);
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
+.home-views .dtab { font-size: 15px; padding: 10px 20px; }
+
 /* One platform, two lenses: the sister app rides in the header. */
 .family { border-left: 1px solid var(--line); padding-left: 16px; }
 .family .fam {

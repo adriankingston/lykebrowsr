@@ -82,7 +82,9 @@
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     const q = qInput.value.trim();
+    // A null search means "show me what I have" — the liked library.
     if (q) location.hash = `#/search/${typeSel.value}/${encodeURIComponent(q)}`;
+    else location.hash = '#/data/liked-music';
   });
 
   // --- Home ------------------------------------------------------------------
@@ -106,17 +108,30 @@
       b.addEventListener('click', () => { location.hash = b.dataset.go; }));
     try {
       const { sets } = await api('/api/data');
-      if (sets.length) {
-        document.getElementById('datasets').innerHTML = `
-          <h2 class="sect">Local datasets</h2>
-          <div class="rows">${sets.map((s) => `
+      const hasLiked = sets.some((s) => s.name === 'liked-music');
+      // Support files (enrichment, genre graph) aren't destinations — keep
+      // the home page pointed at things worth clicking.
+      const rest = sets.filter((s) => !['liked-music', 'liked-music-enriched', 'genre-graph'].includes(s.name));
+      document.getElementById('datasets').innerHTML = `
+        ${hasLiked ? `
+          <h2 class="sect">My lyked music</h2>
+          <p class="ent-meta">Every track you've liked, mapped every which way:</p>
+          <div class="dtabs home-views">
+            <a class="dtab" href="#/data/liked-music">Overview</a>
+            <a class="dtab" href="#/data/liked-music/timeline">Timeline</a>
+            <a class="dtab" href="#/data/liked-music/bands">Bands</a>
+            <a class="dtab" href="#/data/liked-music/graph">Graph</a>
+            <a class="dtab" href="#/data/liked-music/styles">Styles</a>
+          </div>` : ''}
+        ${rest.length ? `
+          <h2 class="sect">Other datasets</h2>
+          <div class="rows">${rest.map((s) => `
             <a class="row" href="#/data/${esc(s.name)}">
               <span class="r-name">${esc(s.name)}</span>
               <span class="r-end">${(s.bytes / 1024).toFixed(1)} KB</span>
             </a>`).join('')}
-          </div>
-          <p class="more-note">Drop a .json file in <code>data/</code> to add more.</p>`;
-      }
+          </div>` : ''}
+        <p class="more-note">Drop a .json file in <code>data/</code> to add more.</p>`;
     } catch { /* datasets are optional */ }
   }
 
