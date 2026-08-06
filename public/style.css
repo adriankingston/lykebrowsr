@@ -381,6 +381,17 @@ table.tracks td.len { text-align: right; }
 .gpanel .sect { margin: 20px 0 8px; }
 .gp-actions { display: flex; gap: 8px; margin-top: 16px; }
 
+.gsel .gx {
+  background: var(--chip);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.gsel .gx:hover { border-color: var(--accent); color: var(--accent); }
+
 .gsel {
   display: flex;
   gap: 14px;

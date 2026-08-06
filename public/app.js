@@ -461,7 +461,8 @@
     view.innerHTML = `${head}
       <p class="ent-meta">${shownBands} of ${artists.length} liked artists, joined through
         ${shownPeople} connecting musicians (diamonds). Unconnected artists and one-band members are
-        hidden — drag, scroll to zoom, click a node to select, <strong>double-click for its story</strong>.</p>
+        hidden — drag, scroll to zoom, click a node to select, <strong>double-click for its story</strong>,
+        <strong>expand&nbsp;+</strong> to pull in relationships beyond your likes (grey) and find new artists.</p>
       <div class="gwrap">
         <div id="dv-graph"></div>
         <aside id="gpanel" class="gpanel" hidden></aside>
@@ -498,6 +499,11 @@
         { selector: 'node[conn = 1]', style: {
           width: 11, height: 11, 'font-size': 9, color: '#c9b27a',
         } },
+        { selector: 'node[grey = 1]', style: {
+          'background-color': '#4d5a63', color: '#91a7b0', 'font-size': 9,
+          width: 12, height: 12,
+        } },
+        { selector: 'node.xp', style: { 'border-width': 2, 'border-color': '#8fd0da' } },
         { selector: 'edge', style: {
           width: 1.4,
           'line-color': '#2e4a56',
@@ -532,6 +538,55 @@
     ro.observe(document.getElementById('dv-graph'));
     // Tap selects and offers the destinations; instant navigation away from a
     // graph you're mid-exploring proved annoying in musikrawlr.
+    // "Find new shit from the shit you already know": expanding a node pulls
+    // its real MusicBrainz relationships and adds the artists you DON'T have
+    // as grey nodes — themselves expandable, so a discovery trail can keep
+    // going. Live lookups share the server's polite queue and disk cache.
+    const junkRel = /tribute|karaoke|cover band/i;
+    const expandedNodes = new Set();
+    async function expandNode(id) {
+      const n0 = cy.getElementById(id);
+      if (n0.empty()) return;
+      n0.addClass('xp');
+      if (expandedNodes.has(id)) return;
+      expandedNodes.add(id);
+      try {
+        const art = await api(`/api/lookup?type=artist&id=${id}&inc=artist-rels`);
+        const pos = n0.position();
+        const rels = (art.relations || []).filter((r) =>
+          r.artist && r.artist.id !== id
+          && (r.type === 'member of band' || r.type === 'collaboration')
+          && !junkRel.test(r.artist.disambiguation || ''));
+        let added = 0;
+        for (const r of rels) {
+          const o = r.artist;
+          const kind = r.type === 'collaboration' ? 'collab' : 'member';
+          if (cy.getElementById(o.id).empty()) {
+            const ang = Math.random() * Math.PI * 2;
+            cy.add({
+              data: { id: o.id, label: o.name, n: 0, col: '#4d5a63',
+                person: o.type === 'Person' ? 1 : 0, conn: 0, grey: 1 },
+              position: { x: pos.x + Math.cos(ang) * 130, y: pos.y + Math.sin(ang) * 130 },
+            });
+            added++;
+          }
+          const ekey = [id, o.id].sort().join('|') + kind;
+          if (cy.getElementById(ekey).empty()) {
+            const yrs = (r.begin || r.end)
+              ? `${(r.begin || '').slice(0, 4) || '?'}–${(r.end || '').slice(0, 4)}` : kind;
+            cy.add({ data: { id: ekey, source: id, target: o.id, label: yrs, kind } });
+          }
+        }
+        if (added) {
+          cy.layout({
+            name: 'cose', idealEdgeLength: 70, randomize: false,
+            nodeRepulsion: (n) => (n.data('conn') || n.data('grey') ? 40000 : 140000),
+            gravity: 0.9, numIter: 1200, animate: false,
+          }).run();
+        }
+      } catch { expandedNodes.delete(id); /* transient — retry allowed */ }
+    }
+
     // Double-click opens the in-graph info panel. Cytoscape has no native
     // double-tap, so it's the manual two-taps-within-400ms detection
     // (same trick as musikrawlr).
@@ -569,8 +624,10 @@
           <div class="gp-actions">
             <a class="dtab" href="#/artist/${id}">open artist →</a>
             <a class="dtab" href="${RAWLR}/#seed=${id}" target="_blank" rel="noopener">musikrawlr ↗</a>
+            <button class="dtab gp-expand">expand +</button>
           </div>`;
         wireClose(p);
+        p.querySelector('.gp-expand').addEventListener('click', () => expandNode(id));
         api(`/api/enrich?type=artist&id=${id}`).then((en) => {
           const box = document.getElementById('gp-enrich');
           if (!box || p.hidden) return;
@@ -583,7 +640,9 @@
         wireClose(p);
       }
     }
-    window.__gpanel = openPanel; // console/debug handle
+    window.__gpanel = openPanel; // console/debug handles
+    window.__gexpand = expandNode;
+    window.__gcy = cy;
 
     let lastTap = { id: null, t: 0 };
     cy.on('tap', 'node', (ev) => {
@@ -599,19 +658,25 @@
       if (!strip) return;
       const a = byId.get(id);
       strip.hidden = false;
+      const actions = `<a href="#/artist/${id}">open artist →</a>
+        <a href="${RAWLR}/#seed=${id}" target="_blank" rel="noopener">open in musikrawlr ↗</a>
+        <button class="gx" title="Pull this artist's other bands and members from MusicBrainz — the grey ones are new to you">expand&nbsp;+</button>`;
       if (a) {
         strip.innerHTML = `<strong>${esc(a.mbName)}</strong>
           <span class="r-sub">${esc([(a.genres || [])[0]?.name, a.country].filter(Boolean).join(' · '))}</span>
-          <a href="#/artist/${a.id}">open artist →</a>
-          <a href="${RAWLR}/#seed=${a.id}" target="_blank" rel="noopener">open in musikrawlr ↗</a>`;
+          ${actions}`;
+      } else if (ev.target.data('grey')) {
+        strip.innerHTML = `<strong>${esc(ev.target.data('label'))}</strong>
+          <span class="r-sub">not in your likes — something new?</span>
+          ${actions}`;
       } else {
         // A connecting musician — their bands ARE the point, list them.
         const bands = (memberOf.get(id) || []).map((g) => g.group);
         strip.innerHTML = `<strong>${esc(personNodes.get(id) || '?')}</strong>
           <span class="r-sub">plays in ${bands.map((b) => esc(b.name)).join(', ')}</span>
-          <a href="#/artist/${id}">open artist →</a>
-          <a href="${RAWLR}/#seed=${id}" target="_blank" rel="noopener">open in musikrawlr ↗</a>`;
+          ${actions}`;
       }
+      strip.querySelector('.gx').addEventListener('click', () => expandNode(id));
     });
     cy.on('tap', (ev) => { if (ev.target === cy) { const s = document.getElementById('gsel'); if (s) s.hidden = true; } });
     cy.on('mouseover', 'edge', (ev) => ev.target.addClass('hl'));
