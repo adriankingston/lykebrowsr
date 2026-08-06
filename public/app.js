@@ -461,8 +461,11 @@
     view.innerHTML = `${head}
       <p class="ent-meta">${shownBands} of ${artists.length} liked artists, joined through
         ${shownPeople} connecting musicians (diamonds). Unconnected artists and one-band members are
-        hidden — drag, scroll to zoom, click a node for details.</p>
-      <div id="dv-graph"></div>
+        hidden — drag, scroll to zoom, click a node to select, <strong>double-click for its story</strong>.</p>
+      <div class="gwrap">
+        <div id="dv-graph"></div>
+        <aside id="gpanel" class="gpanel" hidden></aside>
+      </div>
       <div id="gsel" class="gsel" hidden></div>`;
 
     const els = [];
@@ -529,8 +532,69 @@
     ro.observe(document.getElementById('dv-graph'));
     // Tap selects and offers the destinations; instant navigation away from a
     // graph you're mid-exploring proved annoying in musikrawlr.
+    // Double-click opens the in-graph info panel. Cytoscape has no native
+    // double-tap, so it's the manual two-taps-within-400ms detection
+    // (same trick as musikrawlr).
+    const wireClose = (p) => p.querySelector('.gp-x')
+      .addEventListener('click', () => { p.hidden = true; });
+    async function openPanel(id) {
+      const p = document.getElementById('gpanel');
+      if (!p) return;
+      const known = byId.get(id);
+      p.hidden = false;
+      p.innerHTML = `<button class="gp-x" aria-label="Close">×</button>
+        <h3 class="gp-name">${esc(known?.mbName || personNodes.get(id) || '…')}</h3>
+        <p class="loading">Looking up…</p>`;
+      wireClose(p);
+      try {
+        const art = await api(`/api/lookup?type=artist&id=${id}&inc=genres`);
+        const likedTracks = d.liked.tracks.filter((t) =>
+          d.enr?.artists?.[primaryName(t.artist)]?.id === id);
+        const bands = (memberOf.get(id) || []).map((g) => g.group);
+        const genres = (art.genres || []).sort((x, y) => y.count - x.count).slice(0, 6);
+        p.innerHTML = `
+          <button class="gp-x" aria-label="Close">×</button>
+          <span class="ent-kind">${esc(art.type || 'Artist')}</span>
+          <h3 class="gp-name">${esc(art.name)}</h3>
+          <p class="r-sub">${esc([art.area?.name, art.country, lifespan(art['life-span']), art.disambiguation]
+            .filter(Boolean).join(' · '))}</p>
+          <div id="gp-enrich"></div>
+          ${genres.length ? `<div class="tags">${genres.map((g) => `<span class="tag">${esc(g.name)}</span>`).join('')}</div>` : ''}
+          ${bands.length ? `<h4 class="sect">Plays in</h4><div class="rows">${bands.map((b) =>
+            `<a class="row" href="#/artist/${b.id}"><span class="r-name">${esc(b.name)}</span></a>`).join('')}</div>` : ''}
+          ${likedTracks.length ? `<h4 class="sect">Lyked tracks (${likedTracks.length})</h4>
+            <div class="rows">${likedTracks.slice(0, 12).map((t) => `
+              <div class="row"><span class="r-name">${esc(t.title)}</span><span class="r-end">${esc(t.length || '')}</span></div>`).join('')}</div>
+            ${likedTracks.length > 12 ? `<p class="more-note">+ ${likedTracks.length - 12} more</p>` : ''}` : ''}
+          <div class="gp-actions">
+            <a class="dtab" href="#/artist/${id}">open artist →</a>
+            <a class="dtab" href="${RAWLR}/#seed=${id}" target="_blank" rel="noopener">musikrawlr ↗</a>
+          </div>`;
+        wireClose(p);
+        api(`/api/enrich?type=artist&id=${id}`).then((en) => {
+          const box = document.getElementById('gp-enrich');
+          if (!box || p.hidden) return;
+          box.innerHTML = `${en.image ? `<img class="gp-img" src="${esc(en.image)}" alt="">` : ''}
+            ${en.bio ? `<p class="gp-bio">${esc(en.bio.text.length > 420 ? en.bio.text.slice(0, 420) + '…' : en.bio.text)}
+              <span class="src">— ${esc(en.bio.source)}</span></p>` : ''}`;
+        }).catch(() => { /* best-effort */ });
+      } catch (e) {
+        p.innerHTML = `<button class="gp-x" aria-label="Close">×</button><p class="error">${esc(e.message)}</p>`;
+        wireClose(p);
+      }
+    }
+    window.__gpanel = openPanel; // console/debug handle
+
+    let lastTap = { id: null, t: 0 };
     cy.on('tap', 'node', (ev) => {
       const id = ev.target.id();
+      const now = Date.now();
+      if (lastTap.id === id && now - lastTap.t < 400) {
+        lastTap = { id: null, t: 0 };
+        openPanel(id);
+        return;
+      }
+      lastTap = { id, t: now };
       const strip = document.getElementById('gsel');
       if (!strip) return;
       const a = byId.get(id);
