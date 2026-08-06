@@ -275,6 +275,50 @@ table.tracks td.len { text-align: right; }
 .ext-links { display: flex; flex-wrap: wrap; gap: 10px; }
 .more-note { color: var(--muted); font-size: 13px; margin-top: 10px; }
 
+/* Dataset views */
+.dtabs { display: flex; gap: 8px; align-items: center; margin: 18px 0 6px; flex-wrap: wrap; }
+.dtab {
+  background: var(--chip);
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 6px 14px;
+  font-size: 13px;
+}
+.dtab.on { border-color: var(--accent); color: var(--accent); }
+.dtab-note { color: var(--muted); font-size: 12px; margin-left: 8px; }
+.bv-toggle { display: flex; gap: 8px; margin: 14px 0 4px; }
+
+.tl-chart { width: 100%; height: auto; background: var(--surface); border: 1px solid var(--line); margin-top: 14px; }
+.tl-grid { stroke: var(--line); stroke-width: 1; }
+.tl-tick { fill: var(--muted); font-size: 11px; text-anchor: middle; font-family: Quantico, sans-serif; }
+.tl-lane { font-size: 11px; text-anchor: end; font-family: Quantico, sans-serif; }
+.tl-dot { opacity: .8; cursor: pointer; }
+.tl-dot:hover { opacity: 1; r: 5; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+.bchip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  background: var(--chip);
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 5px 10px;
+  font-size: 13px;
+}
+.bchip:hover { color: var(--accent); }
+.bchip .bn { color: var(--muted); font-size: 11px; }
+.bchip .bc { color: var(--navy); font-size: 11px; }
+
+#dv-graph {
+  width: 100%;
+  height: 72vh;
+  min-height: 420px;
+  background: radial-gradient(90% 80% at 50% 40%, #16262d 0%, var(--bg) 70%);
+  border: 1px solid var(--line);
+  margin-top: 14px;
+}
+
 pre.raw {
   background: var(--surface);
   border: 1px solid var(--line);

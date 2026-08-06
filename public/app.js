@@ -62,7 +62,7 @@
     window.scrollTo(0, 0);
     if (!parts.length) return renderHome();
     if (parts[0] === 'search') return renderSearch(parts[1], parts.slice(2).join('/'));
-    if (parts[0] === 'data' && parts[1]) return renderDataset(parts[1]);
+    if (parts[0] === 'data' && parts[1]) return renderDataset(parts[1], parts[2] || 'overview');
     if (RESULT_KEY[parts[0]] && parts[1]) return renderEntity(parts[0], parts[1]);
     renderHome();
   }
@@ -148,55 +148,315 @@
   }
 
   // --- Local datasets --------------------------------------------------------
-  async function renderDataset(name) {
+  // Must mirror resolve-liked.js: the first credit segment is the join key.
+  const primaryName = (s) => String(s || '').split(/ & |, | feat\.? /i)[0].trim();
+
+  const PAL = ['#4aa8ff', '#2ee6c8', '#ffd166', '#ff6b8f', '#b78cff', '#7fe08a',
+    '#ff9e5e', '#5ed4ff', '#e6a1ff', '#c9e05e', '#ff7b6b', '#8fb0ff'];
+
+  const COUNTRY = { US: 'United States', GB: 'United Kingdom', NZ: 'New Zealand',
+    AU: 'Australia', CA: 'Canada', SE: 'Sweden', FI: 'Finland', DE: 'Germany',
+    JP: 'Japan', IE: 'Ireland', CH: 'Switzerland', HR: 'Croatia', MX: 'Mexico',
+    IN: 'India', MN: 'Mongolia', NO: 'Norway', DK: 'Denmark', FR: 'France',
+    NL: 'Netherlands', ES: 'Spain', IT: 'Italy', BE: 'Belgium', TR: 'Turkey',
+    UA: 'Ukraine', GR: 'Greece', BR: 'Brazil' };
+
+  const dsCache = new Map();
+  async function loadDataset(name) {
+    if (dsCache.has(name)) return dsCache.get(name);
+    const liked = await api(`/api/data?set=${encodeURIComponent(name)}`);
+    let enr = null;
+    try { enr = await api(`/api/data?set=${encodeURIComponent(name)}-enriched`); } catch { /* not resolved yet */ }
+    const d = { liked, enr };
+    if (enr?.phase === 'complete') dsCache.set(name, d);
+    return d;
+  }
+
+  // Join a track to its resolution + its artist's style; styles are bucketed
+  // into the dataset's top N genres so colours stay legible.
+  function joinTracks(d) {
+    const tracks = d.liked.tracks.map((t) => {
+      const r = d.enr?.tracks?.[t.n] || null;
+      const a = d.enr?.artists?.[primaryName(t.artist)] || null;
+      return {
+        ...t,
+        date: r?.date || null,
+        year: r?.date ? Number(r.date.slice(0, 4)) : null,
+        recordingId: r?.recordingId || null,
+        artistInfo: a && a.id ? a : null,
+        genre: a?.genres?.[0]?.name || null,
+      };
+    });
+    const counts = new Map();
+    for (const t of tracks) if (t.genre) counts.set(t.genre, (counts.get(t.genre) || 0) + 1);
+    const topStyles = [...counts.entries()].sort((x, y) => y[1] - x[1]).slice(0, PAL.length - 1).map(([g]) => g);
+    const styleOf = (t) => (t.genre && topStyles.includes(t.genre)) ? t.genre : (t.genre ? 'other' : 'unknown');
+    return { tracks, topStyles, styleOf };
+  }
+
+  const styleColor = (style, topStyles) => {
+    const i = topStyles.indexOf(style);
+    return i >= 0 ? PAL[i] : '#6b7f88';
+  };
+
+  function dsTabs(name, active, enr) {
+    const tab = (id, label) => `<a class="dtab${active === id ? ' on' : ''}"
+      href="#/data/${esc(name)}${id === 'overview' ? '' : '/' + id}">${label}</a>`;
+    const resolved = enr ? Object.keys(enr.tracks || {}).length : 0;
+    const status = !enr ? '<span class="dtab-note">resolving not started</span>'
+      : enr.phase !== 'complete' ? `<span class="dtab-note">resolving… ${resolved} tracks so far — refresh for more</span>` : '';
+    return `<nav class="dtabs">${tab('overview', 'Overview')}${tab('timeline', 'Timeline')}${tab('bands', 'Bands')}${tab('graph', 'Graph')}${status}</nav>`;
+  }
+
+  async function renderDataset(name, sub) {
     loading(`Loading ${name}`);
     try {
-      const data = await api(`/api/data?set=${encodeURIComponent(name)}`);
-      // A track list (anything with .tracks[]) gets the listening-data view;
-      // any other shape falls back to raw JSON so nothing dead-ends.
-      if (!Array.isArray(data.tracks)) {
+      const d = await loadDataset(name);
+      if (!Array.isArray(d.liked.tracks)) {
         view.innerHTML = `
           <span class="ent-kind">Dataset</span>
           <h1 class="ent-title">${esc(name)}</h1>
-          <pre class="raw">${esc(JSON.stringify(data, null, 2)).slice(0, 20000)}</pre>`;
+          <pre class="raw">${esc(JSON.stringify(d.liked, null, 2)).slice(0, 20000)}</pre>`;
         return;
       }
-      const tracks = data.tracks;
-      const byArtist = new Map();
-      let secs = 0;
-      for (const t of tracks) {
-        const a = (t.artist || '(unknown)').trim();
-        byArtist.set(a, (byArtist.get(a) || 0) + 1);
-        const p = String(t.length || '').split(':').map(Number);
-        if (p.length === 2) secs += p[0] * 60 + p[1];
-      }
-      const top = [...byArtist.entries()].sort((x, y) => y[1] - x[1]).slice(0, 30);
-      const searchHref = (a) => `#/search/artist/${encodeURIComponent(a)}`;
-
-      view.innerHTML = `
+      const head = `
         <span class="ent-kind">Dataset</span>
         <h1 class="ent-title">${esc(name)}</h1>
-        <p class="ent-meta">${esc(data.source || '')}${data.extracted ? ` · extracted ${esc(data.extracted.slice(0, 10))}` : ''}</p>
-        <p class="ent-meta">${tracks.length} tracks · ${byArtist.size} artists · ${(secs / 3600).toFixed(1)} hours</p>
-        <h2 class="sect">Top artists</h2>
-        <div class="rows">${top.map(([a, n]) => `
-          <a class="row" href="${searchHref(a)}">
-            <span class="r-name">${esc(a)}</span>
-            <span class="r-end">${n} track${n === 1 ? '' : 's'}</span>
-          </a>`).join('')}</div>
-        <h2 class="sect">All tracks</h2>
-        <table class="tracks">
-          <tr><th></th><th>Title</th><th>Artist</th><th>Album</th><th></th></tr>
-          ${tracks.map((t) => `
-            <tr>
-              <td class="n">${esc(t.n ?? '')}</td>
-              <td>${esc(t.title)}</td>
-              <td><a href="${searchHref(t.artist || '')}">${esc(t.artist || '')}</a></td>
-              <td class="r-sub">${esc(t.album || '')}</td>
-              <td class="len">${esc(t.length || '')}</td>
-            </tr>`).join('')}
-        </table>`;
+        <p class="ent-meta">${esc(d.liked.source || '')}${d.liked.extracted ? ` · extracted ${esc(d.liked.extracted.slice(0, 10))}` : ''}</p>
+        ${dsTabs(name, sub, d.enr)}`;
+      if (sub === 'timeline') return viewTimeline(head, d);
+      if (sub === 'bands') return viewBands(head, d);
+      if (sub === 'graph') return viewGraph(head, d);
+      viewOverview(head, d);
     } catch (e) { fail(e); }
+  }
+
+  function viewOverview(head, d) {
+    const tracks = d.liked.tracks;
+    const byArtist = new Map();
+    let secs = 0;
+    for (const t of tracks) {
+      const a = (t.artist || '(unknown)').trim();
+      byArtist.set(a, (byArtist.get(a) || 0) + 1);
+      const p = String(t.length || '').split(':').map(Number);
+      if (p.length === 2) secs += p[0] * 60 + p[1];
+    }
+    const top = [...byArtist.entries()].sort((x, y) => y[1] - x[1]).slice(0, 30);
+    const artistHref = (a) => {
+      const info = d.enr?.artists?.[primaryName(a)];
+      return info?.id ? `#/artist/${info.id}` : `#/search/artist/${encodeURIComponent(a)}`;
+    };
+    view.innerHTML = `${head}
+      <p class="ent-meta">${tracks.length} tracks · ${byArtist.size} artists · ${(secs / 3600).toFixed(1)} hours</p>
+      <h2 class="sect">Top artists</h2>
+      <div class="rows">${top.map(([a, n]) => `
+        <a class="row" href="${artistHref(a)}">
+          <span class="r-name">${esc(a)}</span>
+          <span class="r-end">${n} track${n === 1 ? '' : 's'}</span>
+        </a>`).join('')}</div>
+      <h2 class="sect">All tracks</h2>
+      <table class="tracks">
+        <tr><th></th><th>Title</th><th>Artist</th><th>Album</th><th></th></tr>
+        ${tracks.map((t) => `
+          <tr>
+            <td class="n">${esc(t.n ?? '')}</td>
+            <td>${esc(t.title)}</td>
+            <td><a href="${artistHref(t.artist || '')}">${esc(t.artist || '')}</a></td>
+            <td class="r-sub">${esc(t.album || '')}</td>
+            <td class="len">${esc(t.length || '')}</td>
+          </tr>`).join('')}
+      </table>`;
+  }
+
+  // Songs by ORIGINAL release year (recording first-release-date), one swim
+  // lane per style, dot per song.
+  function viewTimeline(head, d) {
+    if (!d.enr) { view.innerHTML = `${head}<p class="loading">No resolved data yet — run <code>node resolve-liked.js</code>.</p>`; return; }
+    const { tracks, topStyles, styleOf } = joinTracks(d);
+    const dated = tracks.filter((t) => t.year && t.year > 1900);
+    if (!dated.length) { view.innerHTML = `${head}<p class="loading">No release dates resolved yet — refresh in a minute.</p>`; return; }
+    const y0 = Math.min(...dated.map((t) => t.year));
+    const y1 = Math.max(...dated.map((t) => t.year), new Date().getFullYear());
+    const lanes = [...topStyles, 'other', 'unknown']
+      .map((s) => ({ style: s, tracks: dated.filter((t) => styleOf(t) === s) }))
+      .filter((l) => l.tracks.length);
+    const W = 1000;
+    const LANE = 40;
+    const LEFT = 150;
+    const H = lanes.length * LANE + 46;
+    const x = (yr) => LEFT + (yr - y0) / (y1 - y0) * (W - LEFT - 20);
+    const jitter = (n) => ((n * 2654435761) % 24) - 12;
+    let svg = `<svg viewBox="0 0 ${W} ${H}" class="tl-chart" role="img" aria-label="Songs by original release year and style">`;
+    for (let yr = Math.ceil(y0 / 10) * 10; yr <= y1; yr += 10) {
+      svg += `<line x1="${x(yr)}" y1="20" x2="${x(yr)}" y2="${H - 26}" class="tl-grid"/>
+        <text x="${x(yr)}" y="${H - 10}" class="tl-tick">${yr}</text>`;
+    }
+    lanes.forEach((l, i) => {
+      const cy = 26 + i * LANE + LANE / 2;
+      const col = l.style === 'other' || l.style === 'unknown' ? '#6b7f88' : styleColor(l.style, topStyles);
+      svg += `<text x="${LEFT - 10}" y="${cy + 4}" class="tl-lane" fill="${col}">${esc(l.style)} (${l.tracks.length})</text>`;
+      for (const t of l.tracks) {
+        svg += `<circle cx="${x(t.year).toFixed(1)}" cy="${(cy + jitter(t.n) * 0.9).toFixed(1)}" r="3.4"
+          fill="${col}" class="tl-dot" data-rec="${t.recordingId || ''}">
+          <title>${esc(t.title)} — ${esc(t.artist)} (${t.year})</title></circle>`;
+      }
+    });
+    svg += '</svg>';
+    const undated = tracks.length - dated.length;
+    view.innerHTML = `${head}
+      <p class="ent-meta">${dated.length} songs placed by the <em>earliest release MusicBrainz knows</em> for each
+        recording${undated ? ` · ${undated} not yet resolved` : ''}. Hover a dot; click opens the recording.</p>
+      ${svg}`;
+    view.querySelectorAll('.tl-dot').forEach((c) => c.addEventListener('click', () => {
+      if (c.dataset.rec) location.hash = `#/recording/${c.dataset.rec}`;
+    }));
+  }
+
+  // Bands grouped by style or by country of origin.
+  function viewBands(head, d) {
+    if (!d.enr) { view.innerHTML = `${head}<p class="loading">No resolved data yet.</p>`; return; }
+    const { topStyles } = joinTracks(d);
+    const counts = new Map();
+    for (const t of d.liked.tracks) {
+      const k = primaryName(t.artist);
+      counts.set(k, (counts.get(k) || 0) + 1);
+    }
+    const artists = Object.entries(d.enr.artists || {})
+      .filter(([, a]) => a.id)
+      .map(([name, a]) => ({ name, ...a, n: counts.get(name) || 0 }));
+    const mode = (location.search || '').includes('by=country') ? 'country' : 'style';
+
+    const groups = new Map();
+    for (const a of artists) {
+      const key = mode === 'country'
+        ? (COUNTRY[a.country] || a.country || a.area || 'Unknown')
+        : (a.genres?.[0]?.name || 'unknown');
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(a);
+    }
+    const sections = [...groups.entries()].sort((x, y) => y[1].length - x[1].length);
+    const toggle = `<div class="bv-toggle">
+      <a class="dtab${mode === 'style' ? ' on' : ''}" href="?by=style#/data/liked-music/bands">By style</a>
+      <a class="dtab${mode === 'country' ? ' on' : ''}" href="?by=country#/data/liked-music/bands">By country</a>
+    </div>`;
+    view.innerHTML = `${head}
+      <p class="ent-meta">${artists.length} resolved artists, grouped by ${mode === 'country' ? 'main country of origin' : 'top MusicBrainz genre'}.</p>
+      ${toggle}
+      ${sections.map(([key, list]) => `
+        <h2 class="sect">${esc(key)} (${list.length})</h2>
+        <div class="chips">${list.sort((x, y) => y.n - x.n).map((a) => `
+          <a class="bchip" href="#/artist/${a.id}" style="border-color:${styleColor(a.genres?.[0]?.name, topStyles)}"
+             title="${esc([a.mbName, a.type, a.beginArea || a.area, a.country, (a.genres || []).map((g) => g.name).slice(0, 3).join(', ')].filter(Boolean).join(' · '))}">
+            ${esc(a.name)}<span class="bn">${a.n}</span>
+            ${mode === 'style' && a.country ? `<span class="bc">${esc(a.country)}</span>` : ''}
+            ${mode === 'country' && a.genres?.[0] ? `<span class="bc">${esc(a.genres[0].name)}</span>` : ''}
+          </a>`).join('')}</div>`).join('')}`;
+  }
+
+  // Relationship graph: liked artists as nodes, an edge where two share a
+  // member (or one is a member of / collaborator with the other).
+  function viewGraph(head, d) {
+    if (!d.enr) { view.innerHTML = `${head}<p class="loading">No resolved data yet.</p>`; return; }
+    const { topStyles } = joinTracks(d);
+    const counts = new Map();
+    for (const t of d.liked.tracks) {
+      const k = primaryName(t.artist);
+      counts.set(k, (counts.get(k) || 0) + 1);
+    }
+    const artists = Object.entries(d.enr.artists || {})
+      .filter(([, a]) => a.id)
+      .map(([name, a]) => ({ name, ...a, n: counts.get(name) || 0 }));
+    const byId = new Map(artists.map((a) => [a.id, a]));
+
+    // person id → the liked groups they play(ed) in.
+    const memberOf = new Map();
+    for (const a of artists) {
+      for (const l of a.links || []) {
+        if (l.rel !== 'member') continue;
+        // group side sees members as backward; a liked person's own bands are forward.
+        if (a.type === 'Person' && l.dir === 'forward') continue; // handled from the group side or as direct edge
+        if (!memberOf.has(l.id)) memberOf.set(l.id, []);
+        memberOf.get(l.id).push({ group: a, since: l.begin });
+      }
+    }
+    const edges = new Map();
+    const addEdge = (a, b, label) => {
+      if (a.id === b.id) return;
+      const key = [a.id, b.id].sort().join('|');
+      if (!edges.has(key)) edges.set(key, { a, b, labels: new Set() });
+      edges.get(key).labels.add(label);
+    };
+    for (const [pid, groups] of memberOf) {
+      const person = byId.get(pid);
+      const pname = person?.mbName || groups[0] && (artists.find((x) => (x.links || []).some((l) => l.id === pid))?.links.find((l) => l.id === pid)?.name) || '?';
+      for (let i = 0; i < groups.length; i++) {
+        for (let j = i + 1; j < groups.length; j++) addEdge(groups[i].group, groups[j].group, pname);
+      }
+      if (person) for (const g of groups) addEdge(person, g.group, 'member');
+    }
+    for (const a of artists) {
+      for (const l of a.links || []) {
+        if (byId.has(l.id) && l.rel === 'collab') addEdge(a, byId.get(l.id), 'collab');
+        if (byId.has(l.id) && l.rel === 'member' && a.type === 'Person') addEdge(a, byId.get(l.id), 'member');
+      }
+    }
+
+    const connected = new Set();
+    for (const e of edges.values()) { connected.add(e.a.id); connected.add(e.b.id); }
+    view.innerHTML = `${head}
+      <p class="ent-meta">${connected.size} of ${artists.length} liked artists are linked by shared members or
+        collaborations (${edges.size} connections). Unconnected artists are hidden — drag, scroll to zoom, click a node
+        to open the artist.</p>
+      <div id="dv-graph"></div>`;
+
+    const els = [];
+    for (const a of artists) {
+      if (!connected.has(a.id)) continue;
+      els.push({ data: { id: a.id, label: a.name, n: a.n,
+        col: styleColor(a.genres?.[0]?.name, topStyles), person: a.type === 'Person' ? 1 : 0 } });
+    }
+    for (const e of edges.values()) {
+      els.push({ data: { id: e.a.id + '|' + e.b.id, source: e.a.id, target: e.b.id,
+        label: [...e.labels].slice(0, 3).join(', ') } });
+    }
+    const cy = cytoscape({
+      container: document.getElementById('dv-graph'),
+      elements: els,
+      style: [
+        { selector: 'node', style: {
+          'background-color': 'data(col)',
+          label: 'data(label)',
+          color: '#e5edf0',
+          'font-family': 'Quantico, sans-serif',
+          'font-size': 11,
+          'text-valign': 'bottom',
+          'text-margin-y': 4,
+          width: (n) => 12 + Math.min(n.data('n'), 60) * 0.5,
+          height: (n) => 12 + Math.min(n.data('n'), 60) * 0.5,
+        } },
+        { selector: 'node[person = 1]', style: { shape: 'diamond' } },
+        { selector: 'edge', style: {
+          width: 1.4,
+          'line-color': '#2e4a56',
+          'curve-style': 'bezier',
+          label: 'data(label)',
+          'font-size': 8,
+          color: '#91a7b0',
+          'text-opacity': 0,
+        } },
+        { selector: 'edge:selected, edge.hl', style: { 'text-opacity': 1, 'line-color': '#2ee6c8' } },
+        { selector: 'node:selected', style: { 'border-width': 2, 'border-color': '#fff' } },
+      ],
+      layout: { name: 'cose', idealEdgeLength: 110, nodeRepulsion: 120000, numIter: 2500, animate: false },
+      wheelSensitivity: 0.3,
+    });
+    // The Claude preview pane loads pages at 0×0 — resize before fitting or
+    // the viewport math is garbage (musikrawlr lesson).
+    const ro = new ResizeObserver(() => { cy.resize(); cy.fit(undefined, 30); });
+    ro.observe(document.getElementById('dv-graph'));
+    cy.on('tap', 'node', (ev) => { location.hash = `#/artist/${ev.target.id()}`; });
+    cy.on('mouseover', 'edge', (ev) => ev.target.addClass('hl'));
+    cy.on('mouseout', 'edge', (ev) => ev.target.removeClass('hl'));
   }
 
   // --- Entity pages ----------------------------------------------------------

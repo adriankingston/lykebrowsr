@@ -29,8 +29,15 @@ their respective owners under the terms below.
 
 
 ================================================================================
-BUNDLED THIRD-PARTY FONTS
+BUNDLED THIRD-PARTY SOFTWARE AND FONTS
 ================================================================================
+
+Cytoscape.js  (public/vendor/cytoscape.min.js)
+  The relationship graph is rendered with Cytoscape.js.
+  Copyright (c) 2016-2024, The Cytoscape Consortium.
+  Licensed under the MIT License. The full copyright and licence notice is
+  retained in the header of the bundled file.
+  https://js.cytoscape.org/
 
 Cal Sans  (public/fonts/calsans-latin.woff2, public/fonts/calsans-latinext.woff2)
   Headings are set in the Cal Sans display typeface (latin + latin-extended
