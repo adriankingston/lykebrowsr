@@ -395,45 +395,73 @@
       .map(([name, a]) => ({ name, ...a, n: counts.get(name) || 0 }));
     const byId = new Map(artists.map((a) => [a.id, a]));
 
-    // person id → the liked groups they play(ed) in.
+    // person id → the liked groups they play(ed) in, from the groups' rels.
     const memberOf = new Map();
+    const personName = new Map();
     for (const a of artists) {
       for (const l of a.links || []) {
         if (l.rel !== 'member') continue;
         // group side sees members as backward; a liked person's own bands are forward.
-        if (a.type === 'Person' && l.dir === 'forward') continue; // handled from the group side or as direct edge
+        if (a.type === 'Person' && l.dir === 'forward') continue;
         if (!memberOf.has(l.id)) memberOf.set(l.id, []);
-        memberOf.get(l.id).push({ group: a, since: l.begin });
+        memberOf.get(l.id).push({ group: a, begin: l.begin, end: l.end });
+        if (l.name) personName.set(l.id, l.name);
       }
     }
-    const edges = new Map();
-    const addEdge = (a, b, label) => {
-      if (a.id === b.id) return;
-      const key = [a.id, b.id].sort().join('|');
-      if (!edges.has(key)) edges.set(key, { a, b, labels: new Set() });
-      edges.get(key).labels.add(label);
+
+    // Musicians appear as their own (diamond) nodes: every liked person, plus
+    // any member who CONNECTS two or more liked bands. One-band members stay
+    // folded away — 315 full line-ups would bury the constellations.
+    const personNodes = new Map(); // id → display name
+    for (const [pid, groups] of memberOf) {
+      if (byId.has(pid) || groups.length >= 2) {
+        personNodes.set(pid, byId.get(pid)?.mbName || personName.get(pid) || '?');
+      }
+    }
+
+    const edgeEls = [];
+    const seenEdge = new Set();
+    const pushEdge = (a, b, label, kind) => {
+      if (a === b) return;
+      const key = [a, b].sort().join('|') + kind;
+      if (seenEdge.has(key)) return;
+      seenEdge.add(key);
+      edgeEls.push({ data: { id: key, source: a, target: b, label, kind } });
     };
     for (const [pid, groups] of memberOf) {
-      const person = byId.get(pid);
-      const pname = person?.mbName || groups[0] && (artists.find((x) => (x.links || []).some((l) => l.id === pid))?.links.find((l) => l.id === pid)?.name) || '?';
-      for (let i = 0; i < groups.length; i++) {
-        for (let j = i + 1; j < groups.length; j++) addEdge(groups[i].group, groups[j].group, pname);
+      if (!personNodes.has(pid)) continue;
+      for (const g of groups) {
+        const yrs = (g.begin || g.end)
+          ? `${(g.begin || '').slice(0, 4) || '?'}–${(g.end || '').slice(0, 4)}` : 'member';
+        pushEdge(pid, g.group.id, yrs, 'member');
       }
-      if (person) for (const g of groups) addEdge(person, g.group, 'member');
+    }
+    // A liked person's own bands (forward rels) — catches memberships of
+    // bands whose line-up rels didn't mention them.
+    for (const a of artists) {
+      if (a.type !== 'Person') continue;
+      for (const l of a.links || []) {
+        if (l.rel === 'member' && l.dir === 'forward' && byId.has(l.id)) {
+          const yrs = (l.begin || l.end)
+            ? `${(l.begin || '').slice(0, 4) || '?'}–${(l.end || '').slice(0, 4)}` : 'member';
+          pushEdge(a.id, l.id, yrs, 'member');
+        }
+      }
     }
     for (const a of artists) {
       for (const l of a.links || []) {
-        if (byId.has(l.id) && l.rel === 'collab') addEdge(a, byId.get(l.id), 'collab');
-        if (byId.has(l.id) && l.rel === 'member' && a.type === 'Person') addEdge(a, byId.get(l.id), 'member');
+        if (l.rel === 'collab' && byId.has(l.id)) pushEdge(a.id, l.id, 'collab', 'collab');
       }
     }
 
     const connected = new Set();
-    for (const e of edges.values()) { connected.add(e.a.id); connected.add(e.b.id); }
+    for (const e of edgeEls) { connected.add(e.data.source); connected.add(e.data.target); }
+    const shownBands = artists.filter((a) => connected.has(a.id)).length;
+    const shownPeople = [...personNodes.keys()].filter((id) => connected.has(id) && !byId.has(id)).length;
     view.innerHTML = `${head}
-      <p class="ent-meta">${connected.size} of ${artists.length} liked artists are linked by shared members or
-        collaborations (${edges.size} connections). Unconnected artists are hidden — drag, scroll to zoom, click a node
-        to open the artist.</p>
+      <p class="ent-meta">${shownBands} of ${artists.length} liked artists, joined through
+        ${shownPeople} connecting musicians (diamonds). Unconnected artists and one-band members are
+        hidden — drag, scroll to zoom, click a node for details.</p>
       <div id="dv-graph"></div>
       <div id="gsel" class="gsel" hidden></div>`;
 
@@ -441,12 +469,13 @@
     for (const a of artists) {
       if (!connected.has(a.id)) continue;
       els.push({ data: { id: a.id, label: a.name, n: a.n,
-        col: styleColor(a.genres?.[0]?.name, topStyles), person: a.type === 'Person' ? 1 : 0 } });
+        col: styleColor(a.genres?.[0]?.name, topStyles), person: a.type === 'Person' ? 1 : 0, conn: 0 } });
     }
-    for (const e of edges.values()) {
-      els.push({ data: { id: e.a.id + '|' + e.b.id, source: e.a.id, target: e.b.id,
-        label: [...e.labels].slice(0, 3).join(', ') } });
+    for (const [pid, name] of personNodes) {
+      if (byId.has(pid) || !connected.has(pid)) continue;
+      els.push({ data: { id: pid, label: name, n: 0, col: '#ffd166', person: 1, conn: 1 } });
     }
+    els.push(...edgeEls);
     const cy = cytoscape({
       container: document.getElementById('dv-graph'),
       elements: els,
@@ -463,6 +492,9 @@
           height: (n) => 12 + Math.min(n.data('n'), 60) * 0.5,
         } },
         { selector: 'node[person = 1]', style: { shape: 'diamond' } },
+        { selector: 'node[conn = 1]', style: {
+          width: 11, height: 11, 'font-size': 9, color: '#c9b27a',
+        } },
         { selector: 'edge', style: {
           width: 1.4,
           'line-color': '#2e4a56',
@@ -472,10 +504,23 @@
           color: '#91a7b0',
           'text-opacity': 0,
         } },
+        { selector: 'edge[kind = "collab"]', style: {
+          'line-color': '#b78cff', 'line-style': 'dashed',
+        } },
         { selector: 'edge:selected, edge.hl', style: { 'text-opacity': 1, 'line-color': '#2ee6c8' } },
         { selector: 'node:selected', style: { 'border-width': 2, 'border-color': '#fff' } },
       ],
-      layout: { name: 'cose', idealEdgeLength: 110, nodeRepulsion: 120000, numIter: 2500, animate: false },
+      layout: {
+        name: 'cose',
+        idealEdgeLength: 70,
+        // Small connector diamonds need far less territory than band hubs,
+        // and stronger gravity keeps the many separate cliques from sailing
+        // off to the corners of an enormous canvas.
+        nodeRepulsion: (n) => (n.data('conn') ? 40000 : 140000),
+        gravity: 0.9,
+        numIter: 3000,
+        animate: false,
+      },
       wheelSensitivity: 0.3,
     });
     // The Claude preview pane loads pages at 0×0 — resize before fitting or
@@ -485,14 +530,24 @@
     // Tap selects and offers the destinations; instant navigation away from a
     // graph you're mid-exploring proved annoying in musikrawlr.
     cy.on('tap', 'node', (ev) => {
-      const a = byId.get(ev.target.id());
+      const id = ev.target.id();
       const strip = document.getElementById('gsel');
-      if (!a || !strip) return;
+      if (!strip) return;
+      const a = byId.get(id);
       strip.hidden = false;
-      strip.innerHTML = `<strong>${esc(a.mbName)}</strong>
-        <span class="r-sub">${esc([(a.genres || [])[0]?.name, a.country].filter(Boolean).join(' · '))}</span>
-        <a href="#/artist/${a.id}">open artist →</a>
-        <a href="${RAWLR}/#seed=${a.id}" target="_blank" rel="noopener">open in musikrawlr ↗</a>`;
+      if (a) {
+        strip.innerHTML = `<strong>${esc(a.mbName)}</strong>
+          <span class="r-sub">${esc([(a.genres || [])[0]?.name, a.country].filter(Boolean).join(' · '))}</span>
+          <a href="#/artist/${a.id}">open artist →</a>
+          <a href="${RAWLR}/#seed=${a.id}" target="_blank" rel="noopener">open in musikrawlr ↗</a>`;
+      } else {
+        // A connecting musician — their bands ARE the point, list them.
+        const bands = (memberOf.get(id) || []).map((g) => g.group);
+        strip.innerHTML = `<strong>${esc(personNodes.get(id) || '?')}</strong>
+          <span class="r-sub">plays in ${bands.map((b) => esc(b.name)).join(', ')}</span>
+          <a href="#/artist/${id}">open artist →</a>
+          <a href="${RAWLR}/#seed=${id}" target="_blank" rel="noopener">open in musikrawlr ↗</a>`;
+      }
     });
     cy.on('tap', (ev) => { if (ev.target === cy) { const s = document.getElementById('gsel'); if (s) s.hidden = true; } });
     cy.on('mouseover', 'edge', (ev) => ev.target.addClass('hl'));
