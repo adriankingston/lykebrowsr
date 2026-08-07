@@ -462,7 +462,7 @@
       <p class="ent-meta">${shownBands} of ${artists.length} liked artists, joined through
         ${shownPeople} connecting musicians (diamonds). Unconnected artists and one-band members are
         hidden — drag, scroll to zoom, click a node to select, <strong>double-click for its story</strong>,
-        <strong>expand&nbsp;+</strong> to pull in relationships beyond your likes (grey) and find new artists.</p>
+        <strong>hover and hit +</strong> to pull in relationships beyond your likes (grey) and find new artists.</p>
       <div class="gwrap">
         <div id="dv-graph"></div>
         <aside id="gpanel" class="gpanel" hidden></aside>
@@ -557,18 +557,17 @@
           r.artist && r.artist.id !== id
           && (r.type === 'member of band' || r.type === 'collaboration')
           && !junkRel.test(r.artist.disambiguation || ''));
-        let added = 0;
+        const newIds = [];
         for (const r of rels) {
           const o = r.artist;
           const kind = r.type === 'collaboration' ? 'collab' : 'member';
           if (cy.getElementById(o.id).empty()) {
-            const ang = Math.random() * Math.PI * 2;
             cy.add({
               data: { id: o.id, label: o.name, n: 0, col: '#4d5a63',
                 person: o.type === 'Person' ? 1 : 0, conn: 0, grey: 1 },
-              position: { x: pos.x + Math.cos(ang) * 130, y: pos.y + Math.sin(ang) * 130 },
+              position: { x: pos.x, y: pos.y },
             });
-            added++;
+            newIds.push(o.id);
           }
           const ekey = [id, o.id].sort().join('|') + kind;
           if (cy.getElementById(ekey).empty()) {
@@ -577,12 +576,17 @@
             cy.add({ data: { id: ekey, source: id, target: o.id, label: yrs, kind } });
           }
         }
-        if (added) {
-          cy.layout({
-            name: 'cose', idealEdgeLength: 70, randomize: false,
-            nodeRepulsion: (n) => (n.data('conn') || n.data('grey') ? 40000 : 140000),
-            gravity: 0.9, numIter: 1200, animate: false,
-          }).run();
+        // A tidy circle around the parent, NO global relayout — expanding must
+        // never yank the viewport around (it did, and it was jarring).
+        if (newIds.length) {
+          const R = Math.max(95, (newIds.length * 34) / (2 * Math.PI));
+          newIds.forEach((nid, i) => {
+            const ang = (i / newIds.length) * Math.PI * 2 - Math.PI / 2;
+            cy.getElementById(nid).position({
+              x: pos.x + Math.cos(ang) * R,
+              y: pos.y + Math.sin(ang) * R,
+            });
+          });
         }
       } catch { expandedNodes.delete(id); /* transient — retry allowed */ }
     }
@@ -640,6 +644,45 @@
         wireClose(p);
       }
     }
+    // The expand affordance lives ON the node: hover shows a "+" pinned
+    // beside it (re-anchored through pan/zoom), click pulls the hop in.
+    const plus = document.createElement('button');
+    plus.id = 'gplus';
+    plus.textContent = '+';
+    plus.title = "Expand — this artist's other bands and members; grey means new to you";
+    plus.hidden = true;
+    document.querySelector('.gwrap').appendChild(plus);
+    let plusFor = null;
+    let plusHide = null;
+    const placePlus = () => {
+      if (!plusFor) return;
+      const n = cy.getElementById(plusFor);
+      if (n.empty()) { plus.hidden = true; plusFor = null; return; }
+      const rp = n.renderedPosition();
+      const r = (n.renderedWidth() || 14) / 2;
+      // +14px = the canvas's top margin inside .gwrap.
+      plus.style.left = `${rp.x + r * 0.7 + 3}px`;
+      plus.style.top = `${rp.y - r * 0.7 - 25 + 14}px`;
+    };
+    const scheduleHidePlus = () => {
+      clearTimeout(plusHide);
+      plusHide = setTimeout(() => { plus.hidden = true; plusFor = null; }, 380);
+    };
+    cy.on('mouseover', 'node', (ev) => {
+      clearTimeout(plusHide);
+      plusFor = ev.target.id();
+      plus.hidden = false;
+      placePlus();
+    });
+    cy.on('mouseout', 'node', scheduleHidePlus);
+    plus.addEventListener('mouseenter', () => clearTimeout(plusHide));
+    plus.addEventListener('mouseleave', scheduleHidePlus);
+    plus.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (plusFor) expandNode(plusFor);
+    });
+    cy.on('render pan zoom', () => { if (!plus.hidden) requestAnimationFrame(placePlus); });
+
     window.__gpanel = openPanel; // console/debug handles
     window.__gexpand = expandNode;
     window.__gcy = cy;
@@ -659,8 +702,7 @@
       const a = byId.get(id);
       strip.hidden = false;
       const actions = `<a href="#/artist/${id}">open artist →</a>
-        <a href="${RAWLR}/#seed=${id}" target="_blank" rel="noopener">open in musikrawlr ↗</a>
-        <button class="gx" title="Pull this artist's other bands and members from MusicBrainz — the grey ones are new to you">expand&nbsp;+</button>`;
+        <a href="${RAWLR}/#seed=${id}" target="_blank" rel="noopener">open in musikrawlr ↗</a>`;
       if (a) {
         strip.innerHTML = `<strong>${esc(a.mbName)}</strong>
           <span class="r-sub">${esc([(a.genres || [])[0]?.name, a.country].filter(Boolean).join(' · '))}</span>
@@ -676,7 +718,6 @@
           <span class="r-sub">plays in ${bands.map((b) => esc(b.name)).join(', ')}</span>
           ${actions}`;
       }
-      strip.querySelector('.gx').addEventListener('click', () => expandNode(id));
     });
     cy.on('tap', (ev) => { if (ev.target === cy) { const s = document.getElementById('gsel'); if (s) s.hidden = true; } });
     cy.on('mouseover', 'edge', (ev) => ev.target.addClass('hl'));
