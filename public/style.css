@@ -331,7 +331,17 @@ table.tracks td.len { text-align: right; }
   white-space: nowrap;
   font-family: Quantico, sans-serif;
 }
-.tl-scroll { overflow-x: auto; }
+.tl-scroll {
+  overflow-x: auto;
+  scrollbar-color: #3a5a68 var(--surface); /* thumb, track — Firefox */
+}
+.tl-scroll::-webkit-scrollbar { height: 12px; }
+.tl-scroll::-webkit-scrollbar-track { background: var(--surface); }
+.tl-scroll::-webkit-scrollbar-thumb {
+  background: #3a5a68;
+  border: 2px solid var(--surface);
+}
+.tl-scroll::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 .tl-chart { display: block; }
 .tl-grid { stroke: var(--line); stroke-width: 1; }
 .tl-grid-minor { opacity: .35; }
