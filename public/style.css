@@ -317,6 +317,37 @@ table.tracks td.len { text-align: right; }
 .tl-dot { opacity: .8; cursor: pointer; }
 .tl-dot:hover { opacity: 1; r: 5; }
 
+/* Navigable donuts on the bands page */
+.donuts {
+  display: flex;
+  gap: 40px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin: 18px 0 6px;
+}
+.dn { margin: 0; }
+.dn svg { width: 240px; height: 240px; }
+.dn-seg { cursor: pointer; }
+.dn-seg:hover { opacity: .82; }
+.dn-seg.on { stroke: #fff; stroke-width: 1.5; }
+.dn-other { cursor: default; opacity: .7; }
+.dn-big {
+  fill: var(--text);
+  font: 26px Cal Sans, Quantico, sans-serif;
+  text-anchor: middle;
+}
+.dn-sub { fill: var(--muted); font: 11px Quantico, sans-serif; text-anchor: middle; }
+.dn-cap {
+  text-align: center;
+  font-family: Zen Dots, Quantico, sans-serif;
+  font-size: 12px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-top: 6px;
+}
+.bv-clear { margin-left: 10px; font-size: 11px; cursor: pointer; }
+
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
 .bchip {
   display: inline-flex;

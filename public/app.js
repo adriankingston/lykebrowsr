@@ -400,7 +400,8 @@
     }));
   }
 
-  // Bands grouped by style or by country of origin.
+  // Bands grouped by style or by country of origin, with a navigable pair of
+  // donuts on top: click a segment to filter the chips to that slice.
   function viewBands(head, d) {
     if (!d.enr) { view.innerHTML = `${head}<p class="loading">No resolved data yet.</p>`; return; }
     const { topStyles } = joinTracks(d);
@@ -414,32 +415,121 @@
       .map(([name, a]) => ({ name, ...a, n: counts.get(name) || 0 }));
     const mode = (location.search || '').includes('by=country') ? 'country' : 'style';
 
-    const groups = new Map();
-    for (const a of artists) {
-      const key = mode === 'country'
-        ? (COUNTRY[a.country] || a.country || a.area || 'Unknown')
-        : (a.genres?.[0]?.name || 'unknown');
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(a);
-    }
-    const sections = [...groups.entries()].sort((x, y) => y[1].length - x[1].length);
+    const styleKey = (a) => a.genres?.[0]?.name || 'unknown';
+    const countryKey = (a) => COUNTRY[a.country] || a.country || a.area || 'Unknown';
+    const groupsBy = (fn) => {
+      const m = new Map();
+      for (const a of artists) {
+        const key = fn(a);
+        if (!m.has(key)) m.set(key, []);
+        m.get(key).push(a);
+      }
+      return m;
+    };
+    const styleGroups = groupsBy(styleKey);
+    const countryGroups = groupsBy(countryKey);
+    let filter = null; // {kind: 'style'|'country', label}
+
+    // --- SVG donut ---------------------------------------------------------
+    const arcPath = (cx, cy, R, r, a0, a1) => {
+      const pt = (rad, ang) => `${(cx + rad * Math.cos(ang)).toFixed(2)} ${(cy + rad * Math.sin(ang)).toFixed(2)}`;
+      const large = a1 - a0 > Math.PI ? 1 : 0;
+      return `M${pt(R, a0)} A${R} ${R} 0 ${large} 1 ${pt(R, a1)} L${pt(r, a1)} A${r} ${r} 0 ${large} 0 ${pt(r, a0)} Z`;
+    };
+    const donutSvg = (kind, title, groups) => {
+      const entries = [...groups.entries()]
+        .map(([label, list]) => ({ label, count: list.length }))
+        .sort((x, y) => y.count - x.count);
+      const top = entries.slice(0, 11);
+      const restCount = entries.slice(11).reduce((s, e) => s + e.count, 0);
+      const slices = restCount ? [...top, { label: `${entries.length - 11} more`, count: restCount, other: true }] : top;
+      const total = artists.length;
+      const colorOf = (s, i) => (s.other ? '#3a4a52'
+        : kind === 'style' ? styleColor(s.label, topStyles) : PAL[i % PAL.length]);
+      let ang = -Math.PI / 2;
+      const active = filter && filter.kind === kind ? filter.label : null;
+      const paths = slices.map((s, i) => {
+        const sweep = (s.count / total) * Math.PI * 2;
+        const a0 = ang + 0.012;
+        const a1 = ang + sweep - 0.012;
+        ang += sweep;
+        const mid = (a0 + a1) / 2;
+        const isActive = active === s.label;
+        // The chosen slice steps outward along its own mid-angle.
+        const dx = isActive ? Math.cos(mid) * 7 : 0;
+        const dy = isActive ? Math.sin(mid) * 7 : 0;
+        return `<path d="${arcPath(120 + dx, 120 + dy, 100, 64, a0, Math.max(a1, a0 + 0.004))}"
+          fill="${colorOf(s, i)}" class="dn-seg${isActive ? ' on' : ''}${s.other ? ' dn-other' : ''}"
+          ${s.other ? '' : `data-kind="${kind}" data-label="${esc(s.label)}"`}>
+          <title>${esc(s.label)} — ${s.count} band${s.count === 1 ? '' : 's'} (${Math.round((s.count / total) * 100)}%)</title>
+        </path>`;
+      }).join('');
+      const centre = active
+        ? `<text x="120" y="114" class="dn-big">${esc(active.length > 14 ? active.slice(0, 13) + '…' : active)}</text>
+           <text x="120" y="136" class="dn-sub">${groups.get(active)?.length || 0} bands · click to clear</text>`
+        : `<text x="120" y="114" class="dn-big">${total}</text>
+           <text x="120" y="136" class="dn-sub">bands</text>`;
+      return `<figure class="dn">
+        <svg viewBox="0 0 240 240" role="img" aria-label="${esc(title)}">${paths}${centre}</svg>
+        <figcaption class="dn-cap">${esc(title)}</figcaption>
+      </figure>`;
+    };
+
     const toggle = `<div class="bv-toggle">
       <a class="dtab${mode === 'style' ? ' on' : ''}" href="?by=style#/data/liked-music/bands">By style</a>
       <a class="dtab${mode === 'country' ? ' on' : ''}" href="?by=country#/data/liked-music/bands">By country</a>
     </div>`;
     view.innerHTML = `${head}
-      <p class="ent-meta">${artists.length} resolved artists, grouped by ${mode === 'country' ? 'main country of origin' : 'top MusicBrainz genre'}.</p>
+      <p class="ent-meta">${artists.length} resolved artists, grouped by ${mode === 'country' ? 'main country of origin' : 'top MusicBrainz genre'}.
+        Click a donut segment to zero in on that slice.</p>
       ${toggle}
-      ${sections.map(([key, list]) => `
+      <div class="donuts" id="donuts"></div>
+      <div id="bv-list"></div>`;
+
+    const chip = (a) => `
+      <a class="bchip" href="#/artist/${a.id}" style="border-color:${styleColor(a.genres?.[0]?.name, topStyles)}"
+         title="${esc([a.mbName, a.type, a.beginArea || a.area, a.country, (a.genres || []).map((g) => g.name).slice(0, 3).join(', ')].filter(Boolean).join(' · '))}">
+        ${esc(a.name)}<span class="bn">${a.n}</span>
+        ${mode === 'style' && a.country ? `<span class="bc">${esc(a.country)}</span>` : ''}
+        ${mode === 'country' && a.genres?.[0] ? `<span class="bc">${esc(a.genres[0].name)}</span>` : ''}
+        ${yt(a.name)}
+      </a>`;
+
+    const renderDonuts = () => {
+      document.getElementById('donuts').innerHTML =
+        donutSvg('style', 'By style', styleGroups) + donutSvg('country', 'By country', countryGroups);
+      document.querySelectorAll('.dn-seg[data-label]').forEach((p) => {
+        p.addEventListener('click', () => {
+          const kind = p.dataset.kind;
+          const label = p.dataset.label;
+          filter = (filter && filter.kind === kind && filter.label === label) ? null : { kind, label };
+          renderDonuts();
+          renderList();
+        });
+      });
+    };
+    const renderList = () => {
+      const box = document.getElementById('bv-list');
+      if (filter) {
+        const list = (filter.kind === 'style' ? styleGroups : countryGroups).get(filter.label) || [];
+        box.innerHTML = `
+          <h2 class="sect">${esc(filter.label)} (${list.length}) <button class="dtab bv-clear">show all</button></h2>
+          <div class="chips">${[...list].sort((x, y) => y.n - x.n).map(chip).join('')}</div>`;
+        box.querySelector('.bv-clear').addEventListener('click', () => {
+          filter = null;
+          renderDonuts();
+          renderList();
+        });
+        return;
+      }
+      const groups = mode === 'country' ? countryGroups : styleGroups;
+      const sections = [...groups.entries()].sort((x, y) => y[1].length - x[1].length);
+      box.innerHTML = sections.map(([key, list]) => `
         <h2 class="sect">${esc(key)} (${list.length})</h2>
-        <div class="chips">${list.sort((x, y) => y.n - x.n).map((a) => `
-          <a class="bchip" href="#/artist/${a.id}" style="border-color:${styleColor(a.genres?.[0]?.name, topStyles)}"
-             title="${esc([a.mbName, a.type, a.beginArea || a.area, a.country, (a.genres || []).map((g) => g.name).slice(0, 3).join(', ')].filter(Boolean).join(' · '))}">
-            ${esc(a.name)}<span class="bn">${a.n}</span>
-            ${mode === 'style' && a.country ? `<span class="bc">${esc(a.country)}</span>` : ''}
-            ${mode === 'country' && a.genres?.[0] ? `<span class="bc">${esc(a.genres[0].name)}</span>` : ''}
-            ${yt(a.name)}
-          </a>`).join('')}</div>`).join('')}`;
+        <div class="chips">${[...list].sort((x, y) => y.n - x.n).map(chip).join('')}</div>`).join('');
+    };
+    renderDonuts();
+    renderList();
   }
 
   // Relationship graph: liked artists as nodes, an edge where two share a
