@@ -19,6 +19,20 @@
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+  // "Open in YouTube Music" — a search URL works for anything without auth.
+  // The glyph is a <span> resolved by one delegated handler so it can sit
+  // INSIDE row-anchors (a nested <a> would be invalid and break the row).
+  const ytmUrl = (q) => 'https://music.youtube.com/search?q=' + encodeURIComponent(q);
+  const yt = (q) => `<span class="yt" data-yt="${esc(q)}" role="link" tabindex="0"
+    title="Open in YouTube Music">▶</span>`;
+  document.addEventListener('click', (e) => {
+    const el = e.target.closest('.yt[data-yt]');
+    if (!el) return;
+    e.preventDefault();
+    e.stopPropagation();
+    window.open(ytmUrl(el.dataset.yt), '_blank', 'noopener');
+  });
+
   const api = async (path) => {
     const r = await fetch(path);
     const j = await r.json().catch(() => ({}));
@@ -166,8 +180,11 @@
       bits.push(it.type, it.area?.name, (it['life-span']?.begin || '').slice(0, 4));
     }
     if (it.disambiguation) bits.push(it.disambiguation);
+    const playable = type === 'artist' ? name
+      : ['release-group', 'release', 'recording'].includes(type)
+        ? `${credit(it['artist-credit'])} ${name}`.trim() : null;
     return `<a class="row" href="#/${type}/${it.id}">
-      <span class="r-name">${esc(name)}</span>
+      <span class="r-name">${esc(name)}</span>${playable ? yt(playable) : ''}
       <span class="r-sub">${esc(bits.filter(Boolean).join(' · '))}</span>
       <span class="r-end">${it.score != null ? it.score : ''}</span>
     </a>`;
@@ -278,7 +295,7 @@
       <h2 class="sect">Top artists</h2>
       <div class="rows">${top.map(([a, n]) => `
         <a class="row" href="${artistHref(a)}">
-          <span class="r-name">${esc(a)}</span>
+          <span class="r-name">${esc(a)}</span>${yt(a)}
           <span class="r-end">${n} track${n === 1 ? '' : 's'}</span>
         </a>`).join('')}</div>
       <h2 class="sect">All tracks</h2>
@@ -287,7 +304,7 @@
         ${tracks.map((t) => `
           <tr>
             <td class="n">${esc(t.n ?? '')}</td>
-            <td>${esc(t.title)}</td>
+            <td>${esc(t.title)}${yt(`${t.artist || ''} ${t.title}`.trim())}</td>
             <td><a href="${artistHref(t.artist || '')}">${esc(t.artist || '')}</a></td>
             <td class="r-sub">${esc(t.album || '')}</td>
             <td class="len">${esc(t.length || '')}</td>
@@ -377,6 +394,7 @@
             ${esc(a.name)}<span class="bn">${a.n}</span>
             ${mode === 'style' && a.country ? `<span class="bc">${esc(a.country)}</span>` : ''}
             ${mode === 'country' && a.genres?.[0] ? `<span class="bc">${esc(a.genres[0].name)}</span>` : ''}
+            ${yt(a.name)}
           </a>`).join('')}</div>`).join('')}`;
   }
 
@@ -620,13 +638,14 @@
           <div id="gp-enrich"></div>
           ${genres.length ? `<div class="tags">${genres.map((g) => `<span class="tag">${esc(g.name)}</span>`).join('')}</div>` : ''}
           ${bands.length ? `<h4 class="sect">Plays in</h4><div class="rows">${bands.map((b) =>
-            `<a class="row" href="#/artist/${b.id}"><span class="r-name">${esc(b.name)}</span></a>`).join('')}</div>` : ''}
+            `<a class="row" href="#/artist/${b.id}"><span class="r-name">${esc(b.name)}</span>${yt(b.name)}</a>`).join('')}</div>` : ''}
           ${likedTracks.length ? `<h4 class="sect">Lyked tracks (${likedTracks.length})</h4>
             <div class="rows">${likedTracks.slice(0, 12).map((t) => `
-              <div class="row"><span class="r-name">${esc(t.title)}</span><span class="r-end">${esc(t.length || '')}</span></div>`).join('')}</div>
+              <div class="row"><span class="r-name">${esc(t.title)}</span>${yt(`${art.name} ${t.title}`)}<span class="r-end">${esc(t.length || '')}</span></div>`).join('')}</div>
             ${likedTracks.length > 12 ? `<p class="more-note">+ ${likedTracks.length - 12} more</p>` : ''}` : ''}
           <div class="gp-actions">
             <a class="dtab" href="#/artist/${id}">open artist →</a>
+            <a class="dtab" href="${esc(ytmUrl(art.name))}" target="_blank" rel="noopener">YouTube Music ▶</a>
             <a class="dtab" href="${RAWLR}/#seed=${id}" target="_blank" rel="noopener">musikrawlr ↗</a>
             <button class="dtab gp-expand">expand +</button>
           </div>`;
@@ -644,44 +663,51 @@
         wireClose(p);
       }
     }
-    // The expand affordance lives ON the node: hover shows a "+" pinned
-    // beside it (re-anchored through pan/zoom), click pulls the hop in.
-    const plus = document.createElement('button');
-    plus.id = 'gplus';
-    plus.textContent = '+';
-    plus.title = "Expand — this artist's other bands and members; grey means new to you";
-    plus.hidden = true;
-    document.querySelector('.gwrap').appendChild(plus);
-    let plusFor = null;
-    let plusHide = null;
-    const placePlus = () => {
-      if (!plusFor) return;
-      const n = cy.getElementById(plusFor);
-      if (n.empty()) { plus.hidden = true; plusFor = null; return; }
+    // The node's own action cluster: hover shows [+] (expand) and [▶]
+    // (YouTube Music) pinned beside it, re-anchored through pan/zoom.
+    const hov = document.createElement('div');
+    hov.id = 'ghover';
+    hov.innerHTML = `
+      <button class="gh-btn gh-plus" title="Expand — this artist's other bands and members; grey means new to you">+</button>
+      <button class="gh-btn gh-yt" title="Open in YouTube Music">▶</button>`;
+    hov.hidden = true;
+    document.querySelector('.gwrap').appendChild(hov);
+    let hovFor = null;
+    let hovHide = null;
+    const placeHover = () => {
+      if (!hovFor) return;
+      const n = cy.getElementById(hovFor);
+      if (n.empty()) { hov.hidden = true; hovFor = null; return; }
       const rp = n.renderedPosition();
       const r = (n.renderedWidth() || 14) / 2;
       // +14px = the canvas's top margin inside .gwrap.
-      plus.style.left = `${rp.x + r * 0.7 + 3}px`;
-      plus.style.top = `${rp.y - r * 0.7 - 25 + 14}px`;
+      hov.style.left = `${rp.x + r * 0.7 + 3}px`;
+      hov.style.top = `${rp.y - r * 0.7 - 25 + 14}px`;
     };
-    const scheduleHidePlus = () => {
-      clearTimeout(plusHide);
-      plusHide = setTimeout(() => { plus.hidden = true; plusFor = null; }, 380);
+    const scheduleHideHover = () => {
+      clearTimeout(hovHide);
+      hovHide = setTimeout(() => { hov.hidden = true; hovFor = null; }, 380);
     };
     cy.on('mouseover', 'node', (ev) => {
-      clearTimeout(plusHide);
-      plusFor = ev.target.id();
-      plus.hidden = false;
-      placePlus();
+      clearTimeout(hovHide);
+      hovFor = ev.target.id();
+      hov.hidden = false;
+      placeHover();
     });
-    cy.on('mouseout', 'node', scheduleHidePlus);
-    plus.addEventListener('mouseenter', () => clearTimeout(plusHide));
-    plus.addEventListener('mouseleave', scheduleHidePlus);
-    plus.addEventListener('click', (e) => {
+    cy.on('mouseout', 'node', scheduleHideHover);
+    hov.addEventListener('mouseenter', () => clearTimeout(hovHide));
+    hov.addEventListener('mouseleave', scheduleHideHover);
+    hov.querySelector('.gh-plus').addEventListener('click', (e) => {
       e.stopPropagation();
-      if (plusFor) expandNode(plusFor);
+      if (hovFor) expandNode(hovFor);
     });
-    cy.on('render pan zoom', () => { if (!plus.hidden) requestAnimationFrame(placePlus); });
+    hov.querySelector('.gh-yt').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!hovFor) return;
+      const n = cy.getElementById(hovFor);
+      if (!n.empty()) window.open(ytmUrl(n.data('label')), '_blank', 'noopener');
+    });
+    cy.on('render pan zoom', () => { if (!hov.hidden) requestAnimationFrame(placeHover); });
 
     window.__gpanel = openPanel; // console/debug handles
     window.__gexpand = expandNode;
@@ -701,7 +727,9 @@
       if (!strip) return;
       const a = byId.get(id);
       strip.hidden = false;
+      const nodeName = a?.mbName || ev.target.data('label') || personNodes.get(id) || '';
       const actions = `<a href="#/artist/${id}">open artist →</a>
+        ${yt(nodeName)}
         <a href="${RAWLR}/#seed=${id}" target="_blank" rel="noopener">open in musikrawlr ↗</a>`;
       if (a) {
         strip.innerHTML = `<strong>${esc(a.mbName)}</strong>
@@ -827,7 +855,7 @@
         ${relRow('influenced', rel.influenced)}
         ${relRow('fuses with', rel.fusions)}
         ${bands.length ? `<h4 class="sect">Your bands</h4><div class="rows">${bands.map((b) =>
-          `<a class="row" href="#/artist/${b.id}"><span class="r-name">${esc(b.name)}</span>
+          `<a class="row" href="#/artist/${b.id}"><span class="r-name">${esc(b.name)}</span>${yt(b.name)}
            <span class="r-end">${b.n}</span></a>`).join('')}</div>` : ''}
         ${wiki ? `<div class="gp-actions"><a class="dtab" href="https://en.wikipedia.org/wiki/${esc(wiki)}"
           target="_blank" rel="noopener">Wikipedia ↗</a></div>` : ''}`;
@@ -1027,7 +1055,8 @@
       <div id="head">${entHead('Artist', esc(a.name), [
         a.type, a.area?.name, lifespan(a['life-span']), a.disambiguation,
       ], null)}</div>
-      <p class="ent-meta"><a href="${RAWLR}/#seed=${id}" target="_blank" rel="noopener">open in musikrawlr ↗</a></p>
+      <p class="ent-meta"><a href="${esc(ytmUrl(a.name))}" target="_blank" rel="noopener">YouTube Music ▶</a>
+        · <a href="${RAWLR}/#seed=${id}" target="_blank" rel="noopener">open in musikrawlr ↗</a></p>
       ${genres.length ? `<div class="tags">${genres.map((g) => `<span class="tag">${esc(g.name)}</span>`).join('')}</div>` : ''}
       ${memberList('Members', members)}
       ${memberList('Bands', bands)}
@@ -1097,7 +1126,8 @@
         <div>
           <span class="ent-kind">${esc(rg['primary-type'] || 'Release group')}</span>
           <h1 class="ent-title">${esc(rg.title)}</h1>
-          <p class="ent-meta">${creditLinks(rg['artist-credit'])}${year ? ` · ${year}` : ''}</p>
+          <p class="ent-meta">${creditLinks(rg['artist-credit'])}${year ? ` · ${year}` : ''}
+            ${yt(`${credit(rg['artist-credit'])} ${rg.title}`)}</p>
           ${genres.length ? `<div class="tags">${genres.map((g) => `<span class="tag">${esc(g.name)}</span>`).join('')}</div>` : ''}
         </div>
       </div>
@@ -1135,7 +1165,7 @@
           ${(m.tracks || []).map((t) => `
             <tr>
               <td class="n">${esc(t.number)}</td>
-              <td><a href="#/recording/${t.recording?.id}">${esc(t.title)}</a></td>
+              <td><a href="#/recording/${t.recording?.id}">${esc(t.title)}</a>${yt(`${credit(t['artist-credit']) || credit(rel['artist-credit'])} ${t.title}`)}</td>
               <td class="r-sub">${esc(credit(t['artist-credit']) !== credit(rel['artist-credit']) ? credit(t['artist-credit']) : '')}</td>
               <td class="len">${fmtLen(t.length)}</td>
             </tr>`).join('')}
@@ -1150,7 +1180,8 @@
       <span class="ent-kind">Recording</span>
       <h1 class="ent-title">${esc(rec.title)}</h1>
       <p class="ent-meta">${creditLinks(rec['artist-credit'])}${rec.length ? ` · ${fmtLen(rec.length)}` : ''}
-        ${rec.disambiguation ? ` · ${esc(rec.disambiguation)}` : ''}</p>
+        ${rec.disambiguation ? ` · ${esc(rec.disambiguation)}` : ''}
+        ${yt(`${credit(rec['artist-credit'])} ${rec.title}`)}</p>
       <h2 class="sect">Appears on (${releases.length})</h2>
       <div class="rows">${releases.map((r) => `
         <a class="row" href="#/release/${r.id}">
