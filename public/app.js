@@ -19,19 +19,63 @@
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-  // "Open in YouTube Music" — a search URL works for anything without auth.
+  // "Open in <your service>" — search URLs work for all three without auth.
   // The glyph is a <span> resolved by one delegated handler so it can sit
   // INSIDE row-anchors (a nested <a> would be invalid and break the row).
-  const ytmUrl = (q) => 'https://music.youtube.com/search?q=' + encodeURIComponent(q);
+  // Service choice persists in localStorage and restyles every glyph live.
+  const SERVICES = {
+    ytm: {
+      name: 'YouTube Music',
+      url: (q) => 'https://music.youtube.com/search?q=' + encodeURIComponent(q),
+      icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18.5c-4.69 0-8.5-3.81-8.5-8.5S7.31 3.5 12 3.5s8.5 3.81 8.5 8.5-3.81 8.5-8.5 8.5zM9.75 8l6.5 4-6.5 4V8z"/></svg>',
+    },
+    spotify: {
+      name: 'Spotify',
+      url: (q) => 'https://open.spotify.com/search/' + encodeURIComponent(q),
+      icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm4.6 14.5c-.2.3-.6.4-.9.2-2.5-1.5-5.6-1.9-9.3-1-.3.1-.7-.1-.8-.5-.1-.3.1-.7.5-.8 4-.9 7.5-.5 10.3 1.2.3.2.4.6.2.9zm1.2-2.7c-.2.4-.7.5-1.1.3-2.9-1.8-7.2-2.3-10.6-1.2-.4.1-.9-.1-1-.5-.1-.4.1-.9.5-1 3.9-1.2 8.7-.6 12 1.4.3.2.5.7.2 1zm.1-2.8C14.5 9 8.9 8.8 5.6 9.8c-.5.1-1-.1-1.1-.6-.1-.5.1-1 .6-1.1 3.8-1.2 10-.9 13.9 1.4.4.3.6.9.3 1.3-.3.4-.9.6-1.3.2z"/></svg>',
+    },
+    apple: {
+      name: 'Apple Music',
+      url: (q) => 'https://music.apple.com/search?term=' + encodeURIComponent(q),
+      icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.05 12.54c-.03-2.71 2.21-4.01 2.31-4.07-1.26-1.84-3.22-2.09-3.91-2.12-1.66-.17-3.25.98-4.09.98-.85 0-2.15-.96-3.54-.93-1.82.03-3.5 1.06-4.43 2.69-1.89 3.28-.48 8.14 1.36 10.8.9 1.3 1.97 2.76 3.38 2.71 1.36-.05 1.87-.88 3.51-.88 1.64 0 2.1.88 3.54.85 1.46-.03 2.39-1.32 3.28-2.63 1.03-1.51 1.46-2.97 1.48-3.04-.03-.02-2.85-1.09-2.89-4.36zM14.36 4.6c.75-.91 1.25-2.17 1.11-3.43-1.08.04-2.38.72-3.15 1.62-.69.8-1.3 2.09-1.14 3.32 1.2.09 2.43-.61 3.18-1.51z"/></svg>',
+    },
+  };
+  const svcSel = document.getElementById('svc');
+  const SVC = () => SERVICES[localStorage.getItem('lyke.service')] || SERVICES.ytm;
   const yt = (q) => `<span class="yt" data-yt="${esc(q)}" role="link" tabindex="0"
-    title="Open in YouTube Music">▶</span>`;
+    title="Open in ${esc(SVC().name)}">${SVC().icon}</span>`;
   document.addEventListener('click', (e) => {
     const el = e.target.closest('.yt[data-yt]');
     if (!el) return;
     e.preventDefault();
     e.stopPropagation();
-    window.open(ytmUrl(el.dataset.yt), '_blank', 'noopener');
+    window.open(SVC().url(el.dataset.yt), '_blank', 'noopener');
   });
+  // Restyle every glyph already on the page when the service changes — no
+  // re-render, so graph expansion state survives the switch.
+  function applyService() {
+    const s = SVC();
+    document.querySelectorAll('.yt[data-yt]').forEach((el) => {
+      el.innerHTML = s.icon;
+      el.title = `Open in ${s.name}`;
+    });
+    document.querySelectorAll('a[data-ytlink]').forEach((a) => {
+      a.href = s.url(a.dataset.ytlink);
+      a.innerHTML = `${esc(s.name)} ${s.icon}`;
+    });
+    document.querySelectorAll('.gh-yt').forEach((b) => {
+      b.innerHTML = s.icon;
+      b.title = `Open in ${s.name}`;
+    });
+  }
+  if (svcSel) {
+    svcSel.value = localStorage.getItem('lyke.service') || 'ytm';
+    if (!SERVICES[svcSel.value]) svcSel.value = 'ytm';
+    svcSel.addEventListener('change', () => {
+      localStorage.setItem('lyke.service', svcSel.value);
+      applyService();
+    });
+  }
 
   const api = async (path) => {
     const r = await fetch(path);
@@ -645,7 +689,7 @@
             ${likedTracks.length > 12 ? `<p class="more-note">+ ${likedTracks.length - 12} more</p>` : ''}` : ''}
           <div class="gp-actions">
             <a class="dtab" href="#/artist/${id}">open artist →</a>
-            <a class="dtab" href="${esc(ytmUrl(art.name))}" target="_blank" rel="noopener">YouTube Music ▶</a>
+            <a class="dtab" data-ytlink="${esc(art.name)}" href="${esc(SVC().url(art.name))}" target="_blank" rel="noopener">${esc(SVC().name)} ${SVC().icon}</a>
             <a class="dtab" href="${RAWLR}/#seed=${id}" target="_blank" rel="noopener">musikrawlr ↗</a>
             <button class="dtab gp-expand">expand +</button>
           </div>`;
@@ -669,7 +713,7 @@
     hov.id = 'ghover';
     hov.innerHTML = `
       <button class="gh-btn gh-plus" title="Expand — this artist's other bands and members; grey means new to you">+</button>
-      <button class="gh-btn gh-yt" title="Open in YouTube Music">▶</button>`;
+      <button class="gh-btn gh-yt" title="Open in ${esc(SVC().name)}">${SVC().icon}</button>`;
     hov.hidden = true;
     document.querySelector('.gwrap').appendChild(hov);
     let hovFor = null;
@@ -705,7 +749,7 @@
       e.stopPropagation();
       if (!hovFor) return;
       const n = cy.getElementById(hovFor);
-      if (!n.empty()) window.open(ytmUrl(n.data('label')), '_blank', 'noopener');
+      if (!n.empty()) window.open(SVC().url(n.data('label')), '_blank', 'noopener');
     });
     cy.on('render pan zoom', () => { if (!hov.hidden) requestAnimationFrame(placeHover); });
 
@@ -1055,7 +1099,7 @@
       <div id="head">${entHead('Artist', esc(a.name), [
         a.type, a.area?.name, lifespan(a['life-span']), a.disambiguation,
       ], null)}</div>
-      <p class="ent-meta"><a href="${esc(ytmUrl(a.name))}" target="_blank" rel="noopener">YouTube Music ▶</a>
+      <p class="ent-meta"><a data-ytlink="${esc(a.name)}" href="${esc(SVC().url(a.name))}" target="_blank" rel="noopener">${esc(SVC().name)} ${SVC().icon}</a>
         · <a href="${RAWLR}/#seed=${id}" target="_blank" rel="noopener">open in musikrawlr ↗</a></p>
       ${genres.length ? `<div class="tags">${genres.map((g) => `<span class="tag">${esc(g.name)}</span>`).join('')}</div>` : ''}
       ${memberList('Members', members)}

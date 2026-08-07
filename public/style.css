@@ -384,15 +384,29 @@ table.tracks td.len { text-align: right; }
 .gp-rel .r-sub { display: inline-block; min-width: 96px; }
 .gp-style { cursor: pointer; }
 
-/* Everywhere a band or song is named, ▶ opens it in YouTube Music */
+/* Everywhere a band or song is named, the service glyph opens it there */
 .yt {
   color: var(--muted);
-  font-size: 10px;
   margin-left: 6px;
   cursor: pointer;
-  vertical-align: 1px;
+  display: inline-flex;
+  vertical-align: -1px;
 }
 .yt:hover, .yt:focus { color: var(--accent); }
+.yt svg { width: 12px; height: 12px; fill: currentColor; }
+.gh-btn svg { width: 13px; height: 13px; fill: currentColor; vertical-align: -2px; }
+a[data-ytlink] svg, .dtab svg { width: 12px; height: 12px; fill: currentColor; vertical-align: -2px; margin-left: 2px; }
+
+#svc.svc {
+  background: var(--chip);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+}
+#svc.svc:hover { color: var(--text); border-color: var(--accent); }
 
 /* Hover action cluster ([+] expand, [▶] YouTube Music), pinned by the node */
 #ghover {
