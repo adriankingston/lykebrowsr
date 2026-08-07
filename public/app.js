@@ -1192,6 +1192,7 @@
       <p class="ent-meta"><a data-ytlink="${esc(a.name)}" href="${esc(SVC().url(a.name))}" target="_blank" rel="noopener">${esc(SVC().name)} ${SVC().icon}</a>
         · <a href="${RAWLR}/#seed=${id}" target="_blank" rel="noopener">open in musikrawlr ↗</a></p>
       ${genres.length ? `<div class="tags">${genres.map((g) => `<span class="tag">${esc(g.name)}</span>`).join('')}</div>` : ''}
+      <div id="lyked"></div>
       ${memberList('Members', members)}
       ${memberList('Bands', bands)}
       <h2 class="sect">Discography</h2>
@@ -1204,6 +1205,26 @@
         a.type, a.area?.name, lifespan(a['life-span']), a.disambiguation,
       ], en);
     }).catch(() => {});
+
+    // If this artist is in the liked library, show those songs right here.
+    loadDataset('liked-music').then(({ liked, enr }) => {
+      const box = document.getElementById('lyked');
+      if (!box || !enr) return;
+      const mine = liked.tracks.filter((t) => enr.artists?.[primaryName(t.artist)]?.id === id);
+      if (!mine.length) return;
+      box.innerHTML = `<h2 class="sect">Lyked tracks (${mine.length})</h2>
+        <table class="tracks">${mine.map((t) => {
+          const rec = enr.tracks?.[t.n]?.recordingId;
+          const date = enr.tracks?.[t.n]?.date;
+          return `<tr>
+            <td class="n">${esc(t.n)}</td>
+            <td>${rec ? `<a href="#/recording/${rec}">${esc(t.title)}</a>` : esc(t.title)}${yt(`${t.artist} ${t.title}`)}</td>
+            <td class="r-sub">${esc(t.album || '')}</td>
+            <td class="r-sub">${esc(date ? date.slice(0, 4) : '')}</td>
+            <td class="len">${esc(t.length || '')}</td>
+          </tr>`;
+        }).join('')}</table>`;
+    }).catch(() => { /* no dataset — catalogue-only install */ });
 
     api(`/api/browse?type=release-group&artist=${id}&limit=100`).then((d) => {
       const disco = document.getElementById('disco');
