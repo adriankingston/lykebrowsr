@@ -177,6 +177,9 @@ a:hover { color: var(--accent); }
 
 /* Home */
 .datasets { margin-top: 26px; }
+#view.home { display: flex; flex-direction: column; }
+#view.home .datasets { display: flex; flex-direction: column; flex: 1; }
+#view.home .more-note { margin-top: auto; padding-top: 40px; }
 
 /* Section headings */
 .sect {

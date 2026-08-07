@@ -129,6 +129,8 @@
     // Visual dataset views go full-bleed; everything else keeps the column.
     view.classList.toggle('wide',
       parts[0] === 'data' && ['timeline', 'bands', 'graph', 'styles'].includes(parts[2]));
+    // Home pins its data/ hint to the bottom of the viewport.
+    view.classList.toggle('home', !parts.length);
     if (!parts.length) return renderHome();
     if (parts[0] === 'search') return renderSearch(parts[1], parts.slice(2).join('/'));
     if (parts[0] === 'data' && parts[1]) return renderDataset(parts[1], parts[2] || 'overview');
@@ -156,8 +158,7 @@
       const rest = sets.filter((s) => !['liked-music', 'liked-music-enriched', 'genre-graph'].includes(s.name));
       document.getElementById('datasets').innerHTML = `
         ${hasLiked ? `
-          <h2 class="sect">My lyked music</h2>
-          <p class="ent-meta">Every track you've liked, mapped every which way:</p>
+          <h2 class="sect">Lykebrowsr: Your music Lyked</h2>
           <div class="dtabs home-views">
             <a class="dtab" href="#/data/liked-music">Overview</a>
             <a class="dtab" href="#/data/liked-music/timeline">Timeline</a>
