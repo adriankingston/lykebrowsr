@@ -1524,16 +1524,21 @@
       artist: (x, y) => credit(x['artist-credit']).localeCompare(credit(y['artist-credit'])) || SORTS.date(x, y),
     };
     let sortMode = 'date';
+    let sortDir = 1; // 1 ascending, -1 descending
     let cur = null; // { offset, data } — re-sorts don't refetch
     const renderPage = () => {
       const box = document.getElementById('lbrel');
       if (!box || !cur) return;
       const { offset, data: d } = cur;
       const total = d['release-count'] || (d.releases || []).length;
-      const rels = [...(d.releases || [])].sort(SORTS[sortMode]);
+      const rels = [...(d.releases || [])].sort((x, y) => sortDir * SORTS[sortMode](x, y));
       const sorter = `<div class="pgnav"><span class="r-sub">sort</span>
-        ${['album', 'artist', 'date'].map((s) =>
-          `<button class="dtab${sortMode === s ? ' on' : ''}" data-srt="${s}">${s}</button>`).join('')}
+        ${['album', 'artist', 'date'].map((s) => {
+          const on = sortMode === s;
+          const arrow = on ? ` ${sortDir === 1 ? '↑' : '↓'}` : '';
+          const title = on ? `${s} — click to reverse` : `sort by ${s}`;
+          return `<button class="dtab${on ? ' on' : ''}" data-srt="${s}" title="${title}">${s}${arrow}</button>`;
+        }).join('')}
       </div>`;
       const nav = total > PAGE ? `<div class="pgnav">
         <button class="dtab" data-pg="${offset - PAGE}" ${offset <= 0 ? 'disabled' : ''}>← previous</button>
@@ -1549,7 +1554,12 @@
       box.querySelectorAll('[data-pg]').forEach((b) =>
         b.addEventListener('click', () => renderReleases(Number(b.dataset.pg))));
       box.querySelectorAll('[data-srt]').forEach((b) =>
-        b.addEventListener('click', () => { sortMode = b.dataset.srt; renderPage(); }));
+        b.addEventListener('click', () => {
+          const s = b.dataset.srt;
+          if (s === sortMode) sortDir = -sortDir; // same column again → reverse
+          else { sortMode = s; sortDir = 1; }
+          renderPage();
+        }));
     };
     const renderReleases = async (offset) => {
       const el = document.getElementById('lbrel');
