@@ -1538,8 +1538,11 @@
     }).catch(() => {});
 
     const PAGE = 100;
-    // Sorting is within the loaded page (MB's browse can't sort server-side);
-    // MB's stable paging order still guarantees next/previous never skips.
+    // MB's browse can't sort server-side, so sorting the whole catalogue means
+    // fetching it: pages stream in through the polite queue (disk-cached after
+    // the first visit), the list re-sorts as they land, and pagination is
+    // client-side over the full sorted set. Huge labels stop at CAP and say so.
+    const CAP = 2000;
     const SORTS = {
       date: (x, y) => (x.date || '9999').localeCompare(y.date || '9999'),
       album: (x, y) => x.title.localeCompare(y.title) || SORTS.date(x, y),
@@ -1547,13 +1550,23 @@
     };
     let sortMode = 'date';
     let sortDir = 1; // 1 ascending, -1 descending
-    let cur = null; // { offset, data } — re-sorts don't refetch
+    let all = [];
+    let total = null;
+    let viewOffset = 0;
+    const gone = () => !document.getElementById('lbrel'); // navigated away
     const renderPage = () => {
+      if (gone()) return;
       const box = document.getElementById('lbrel');
-      if (!box || !cur) return;
-      const { offset, data: d } = cur;
-      const total = d['release-count'] || (d.releases || []).length;
-      const rels = [...(d.releases || [])].sort((x, y) => sortDir * SORTS[sortMode](x, y));
+      const target = Math.min(total || 0, CAP);
+      // Undated releases sink to the bottom in BOTH date directions — flipping
+      // to newest-first shouldn't lead with the releases MB knows least about.
+      const rels = [...all].sort((x, y) => {
+        if (sortMode === 'date' && !x.date !== !y.date) return x.date ? -1 : 1;
+        return sortDir * SORTS[sortMode](x, y);
+      });
+      if (viewOffset >= rels.length) viewOffset = Math.max(0, Math.floor((rels.length - 1) / PAGE) * PAGE);
+      const loading = all.length < target ? ` · loading ${all.length} of ${target}…` : '';
+      const capped = total > CAP && all.length >= CAP ? ` · sorting the first ${CAP} of ${total}` : '';
       const sorter = `<div class="pgnav"><span class="r-sub">sort</span>
         ${['album', 'artist', 'date'].map((s) => {
           const on = sortMode === s;
@@ -1563,41 +1576,45 @@
         }).join('')}
       </div>`;
       const nav = total > PAGE ? `<div class="pgnav">
-        <button class="dtab" data-pg="${offset - PAGE}" ${offset <= 0 ? 'disabled' : ''}>← previous</button>
-        <span class="r-sub">${offset + 1}–${Math.min(offset + PAGE, total)} of ${total}</span>
-        <button class="dtab" data-pg="${offset + PAGE}" ${offset + PAGE >= total ? 'disabled' : ''}>next →</button>
+        <button class="dtab" data-pg="${viewOffset - PAGE}" ${viewOffset <= 0 ? 'disabled' : ''}>← previous</button>
+        <span class="r-sub">${viewOffset + 1}–${Math.min(viewOffset + PAGE, rels.length)} of ${total}${loading}${capped}</span>
+        <button class="dtab" data-pg="${viewOffset + PAGE}" ${viewOffset + PAGE >= rels.length ? 'disabled' : ''}>next →</button>
       </div>` : '';
-      box.innerHTML = `${sorter}${nav}<div class="rows">${rels.map((r) => `
+      box.innerHTML = `${sorter}${nav}<div class="rows">${rels.slice(viewOffset, viewOffset + PAGE).map((r) => `
         <a class="row" href="#/release/${r.id}">
           <span class="r-name">${esc(r.title)}</span>${yt(`${credit(r['artist-credit'])} ${r.title}`.trim())}
           <span class="r-sub">${esc([credit(r['artist-credit']), r.country, r.status].filter(Boolean).join(' · '))}</span>
           <span class="r-end">${esc(r.date || '')}</span>
         </a>`).join('')}</div>${nav}`;
       box.querySelectorAll('[data-pg]').forEach((b) =>
-        b.addEventListener('click', () => renderReleases(Number(b.dataset.pg))));
+        b.addEventListener('click', () => { viewOffset = Number(b.dataset.pg); renderPage(); }));
       box.querySelectorAll('[data-srt]').forEach((b) =>
         b.addEventListener('click', () => {
           const s = b.dataset.srt;
           if (s === sortMode) sortDir = -sortDir; // same column again → reverse
           else { sortMode = s; sortDir = 1; }
+          viewOffset = 0;
           renderPage();
         }));
     };
-    const renderReleases = async (offset) => {
-      const el = document.getElementById('lbrel');
-      if (!el) return;
-      el.innerHTML = '<p class="loading">Loading…</p>';
+    (async () => {
       try {
-        const data = await api(`/api/browse?type=release&label=${id}&limit=${PAGE}&offset=${offset}&inc=artist-credits`);
-        if (!document.getElementById('lbrel')) return; // navigated away mid-fetch
-        cur = { offset, data };
-        renderPage();
+        for (let off = 0; total === null || off < Math.min(total, CAP); off += PAGE) {
+          const d = await api(`/api/browse?type=release&label=${id}&limit=${PAGE}&offset=${off}&inc=artist-credits`);
+          if (gone()) return;
+          if (total === null) total = d['release-count'] || (d.releases || []).length;
+          const got = d.releases || [];
+          all.push(...got);
+          renderPage();
+          if (!got.length) break;
+        }
       } catch (e) {
-        const box = document.getElementById('lbrel');
-        if (box) box.innerHTML = `<p class="error">Releases failed: ${esc(e.message)}</p>`;
+        if (gone()) return;
+        if (!all.length) {
+          document.getElementById('lbrel').innerHTML = `<p class="error">Releases failed: ${esc(e.message)}</p>`;
+        }
       }
-    };
-    renderReleases(0);
+    })();
   }
 
   route();
