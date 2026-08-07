@@ -347,6 +347,9 @@ table.tracks td.len { text-align: right; }
   margin-top: 6px;
 }
 .bv-clear { margin-left: 10px; font-size: 11px; cursor: pointer; }
+.pgnav { display: flex; align-items: center; gap: 14px; margin: 12px 0; }
+.pgnav .dtab { cursor: pointer; font: inherit; font-size: 12px; }
+.pgnav .dtab[disabled] { opacity: .4; cursor: default; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
 .bchip {

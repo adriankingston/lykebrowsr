@@ -1436,22 +1436,38 @@
       ], en);
     }).catch(() => {});
 
-    api(`/api/browse?type=release&label=${id}&limit=100`).then((d) => {
+    const PAGE = 100;
+    const renderReleases = async (offset) => {
       const el = document.getElementById('lbrel');
       if (!el) return;
-      const rels = (d.releases || []).sort((x, y) => (x.date || '9999').localeCompare(y.date || '9999'));
-      el.classList.remove('loading');
-      el.innerHTML = `<div class="rows">${rels.map((r) => `
-        <a class="row" href="#/release/${r.id}">
-          <span class="r-name">${esc(r.title)}</span>
-          <span class="r-sub">${esc([r.country, r.status].filter(Boolean).join(' · '))}</span>
-          <span class="r-end">${esc(r.date || '')}</span>
-        </a>`).join('')}</div>
-        ${d['release-count'] > 100 ? `<p class="more-note">First 100 of ${d['release-count']} releases.</p>` : ''}`;
-    }).catch((e) => {
-      const el = document.getElementById('lbrel');
-      if (el) el.outerHTML = `<p class="error">Releases failed: ${esc(e.message)}</p>`;
-    });
+      el.innerHTML = '<p class="loading">Loading…</p>';
+      try {
+        const d = await api(`/api/browse?type=release&label=${id}&limit=${PAGE}&offset=${offset}&inc=artist-credits`);
+        const box = document.getElementById('lbrel');
+        if (!box) return; // user navigated away mid-fetch
+        const total = d['release-count'] || (d.releases || []).length;
+        // Each page sorts by date internally; MB's own paging order is stable
+        // across pages, so next/previous never skips or repeats releases.
+        const rels = (d.releases || []).sort((x, y) => (x.date || '9999').localeCompare(y.date || '9999'));
+        const nav = total > PAGE ? `<div class="pgnav">
+          <button class="dtab" data-pg="${offset - PAGE}" ${offset <= 0 ? 'disabled' : ''}>← previous</button>
+          <span class="r-sub">${offset + 1}–${Math.min(offset + PAGE, total)} of ${total}</span>
+          <button class="dtab" data-pg="${offset + PAGE}" ${offset + PAGE >= total ? 'disabled' : ''}>next →</button>
+        </div>` : '';
+        box.innerHTML = `${nav}<div class="rows">${rels.map((r) => `
+          <a class="row" href="#/release/${r.id}">
+            <span class="r-name">${esc(r.title)}</span>${yt(`${credit(r['artist-credit'])} ${r.title}`.trim())}
+            <span class="r-sub">${esc([credit(r['artist-credit']), r.country, r.status].filter(Boolean).join(' · '))}</span>
+            <span class="r-end">${esc(r.date || '')}</span>
+          </a>`).join('')}</div>${nav}`;
+        box.querySelectorAll('[data-pg]').forEach((b) =>
+          b.addEventListener('click', () => renderReleases(Number(b.dataset.pg))));
+      } catch (e) {
+        const box = document.getElementById('lbrel');
+        if (box) box.innerHTML = `<p class="error">Releases failed: ${esc(e.message)}</p>`;
+      }
+    };
+    renderReleases(0);
   }
 
   route();
