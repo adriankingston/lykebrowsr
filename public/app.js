@@ -786,17 +786,7 @@
         { selector: 'edge:selected, edge.hl', style: { 'text-opacity': 1, 'line-color': '#2ee6c8' } },
         { selector: 'node:selected', style: { 'border-width': 2, 'border-color': '#fff' } },
       ],
-      layout: {
-        name: 'cose',
-        idealEdgeLength: 70,
-        // Small connector diamonds need far less territory than band hubs,
-        // and stronger gravity keeps the many separate cliques from sailing
-        // off to the corners of an enormous canvas.
-        nodeRepulsion: (n) => (n.data('conn') ? 40000 : 140000),
-        gravity: 0.9,
-        numIter: 3000,
-        animate: false,
-      },
+      layout: { name: 'preset' }, // real layout runs below, after handlers attach
       wheelSensitivity: 0.3,
     });
     // cose only shapes CONNECTED clusters — disconnected islands feel nothing
@@ -819,8 +809,25 @@
         rowH = Math.max(rowH, b.h);
       }
       cy.fit(undefined, 30);
+      window.__gpacked = true;
     };
-    cy.one('layoutstop', packComponents);
+    // Attached to the layout BEFORE run(): a constructor-declared layout can
+    // emit layoutstop before a later cy.one() handler exists, so whether the
+    // packing ran depended on event timing (it lost the race in real Chrome).
+    const lay = cy.layout({
+      name: 'cose',
+      idealEdgeLength: 70,
+      // Small connector diamonds need far less territory than band hubs,
+      // and stronger gravity keeps the many separate cliques from sailing
+      // off to the corners of an enormous canvas.
+      nodeRepulsion: (n) => (n.data('conn') ? 40000 : 140000),
+      gravity: 0.9,
+      numIter: 3000,
+      animate: false,
+    });
+    window.__gpacked = false;
+    lay.one('layoutstop', packComponents);
+    lay.run();
 
     // The Claude preview pane loads pages at 0×0 — resize before fitting or
     // the viewport math is garbage (musikrawlr lesson).
