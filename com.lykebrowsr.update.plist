@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.lykebrowsr.update</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/adriankingston/Claude projects/lykebrowsr/update.sh</string>
+  </array>
+  <!-- Daily at 08:30. If the Mac was asleep, launchd runs it on wake. -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>8</integer>
+    <key>Minute</key><integer>30</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/adriankingston/Claude projects/lykebrowsr/update.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/adriankingston/Claude projects/lykebrowsr/update.log</string>
+</dict>
+</plist>
