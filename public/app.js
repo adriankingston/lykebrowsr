@@ -777,6 +777,29 @@
       },
       wheelSensitivity: 0.3,
     });
+    // cose only shapes CONNECTED clusters — disconnected islands feel nothing
+    // but repulsion + gravity and end up wherever the random seed flung them.
+    // So after the physics settles, keep the main constellation in place and
+    // grid-pack the small components neatly beneath it.
+    const packComponents = () => {
+      const comps = cy.elements().components().sort((a, b) => b.length - a.length);
+      if (comps.length < 2) return;
+      const mb = comps[0].boundingBox();
+      const rowW = Math.max(mb.w, 1400);
+      let px = mb.x1;
+      let py = mb.y2 + 160;
+      let rowH = 0;
+      for (const c of comps.slice(1)) {
+        const b = c.boundingBox();
+        if (px + b.w > mb.x1 + rowW) { px = mb.x1; py += rowH + 110; rowH = 0; }
+        c.shift({ x: px - b.x1, y: py - b.y1 });
+        px += b.w + 110;
+        rowH = Math.max(rowH, b.h);
+      }
+      cy.fit(undefined, 30);
+    };
+    cy.one('layoutstop', packComponents);
+
     // The Claude preview pane loads pages at 0×0 — resize before fitting or
     // the viewport math is garbage (musikrawlr lesson).
     const ro = new ResizeObserver(() => { cy.resize(); cy.fit(undefined, 30); });
