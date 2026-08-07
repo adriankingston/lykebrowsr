@@ -773,9 +773,79 @@
       </p>
       <p class="ent-meta st-key">lineage arrows: <span style="color:#ffd166">origin →</span>
         <span style="color:#4aa8ff">subgenre →</span> <span style="color:#b78cff">influence →</span>
-        <span style="color:#ff6b8f">fusion</span> · grey nodes = neighbouring genres not in the library</p>
-      <div id="dv-graph"></div>
+        <span style="color:#ff6b8f">fusion</span> · grey nodes = neighbouring genres not in the library
+        · zoom in to separate crowded styles · double-click a style for its story</p>
+      <div class="gwrap">
+        <div id="dv-graph"></div>
+        <aside id="gpanel" class="gpanel" hidden></aside>
+      </div>
       <div id="gsel" class="gsel" hidden></div>`;
+
+    // Style story panel (double-click a node): library stats, the lineage in
+    // words, and the Wikipedia summary fetched straight from the REST API
+    // (it sends CORS headers, so no server hop needed).
+    const wireClose = (p) => p.querySelector('.gp-x')
+      .addEventListener('click', () => { p.hidden = true; });
+    function relatedOf(name) {
+      const out = { origins: [], derivatives: [], parents: [], subgenres: [], influencedBy: [], influenced: [], fusions: [] };
+      for (const e of (gg?.edges || [])) {
+        if (e.type === 'origin-of' && e.to === name) out.origins.push(e.from);
+        else if (e.type === 'origin-of' && e.from === name) out.derivatives.push(e.to);
+        else if (e.type === 'subgenre-of' && e.from === name) out.parents.push(e.to);
+        else if (e.type === 'subgenre-of' && e.to === name) out.subgenres.push(e.from);
+        else if (e.type === 'influenced' && e.to === name) out.influencedBy.push(e.from);
+        else if (e.type === 'influenced' && e.from === name) out.influenced.push(e.to);
+        else if (e.type === 'fusion' && (e.from === name || e.to === name)) {
+          out.fusions.push(e.from === name ? e.to : e.from);
+        }
+      }
+      for (const k in out) out[k] = [...new Set(out[k])];
+      return out;
+    }
+    function openStylePanel(name) {
+      const p = document.getElementById('gpanel');
+      if (!p) return;
+      const st = stats.get(name);
+      const rel = relatedOf(name);
+      const wiki = gg?.styles?.[name]?.wiki || null;
+      const relRow = (label, list) => list.length
+        ? `<p class="gp-rel"><span class="r-sub">${label}</span> ${list.map((s) =>
+            `<a class="gp-style" data-style="${esc(s)}">${esc(s)}</a>`).join(', ')}</p>` : '';
+      const bands = st ? [...st.bands].sort((x, y) => y.n - x.n).slice(0, 20) : [];
+      p.hidden = false;
+      p.innerHTML = `
+        <button class="gp-x" aria-label="Close">×</button>
+        <span class="ent-kind">${st ? 'Style' : 'Neighbouring style'}</span>
+        <h3 class="gp-name">${esc(name)}</h3>
+        <p class="r-sub">${st ? `${st.tracks} lyked tracks · ${st.bands.length} bands` : 'not in your likes'}</p>
+        <div id="gp-enrich"></div>
+        ${relRow('came from', rel.origins)}
+        ${relRow('parent of', rel.subgenres)}
+        ${relRow('subgenre of', rel.parents)}
+        ${relRow('gave rise to', rel.derivatives)}
+        ${relRow('influenced by', rel.influencedBy)}
+        ${relRow('influenced', rel.influenced)}
+        ${relRow('fuses with', rel.fusions)}
+        ${bands.length ? `<h4 class="sect">Your bands</h4><div class="rows">${bands.map((b) =>
+          `<a class="row" href="#/artist/${b.id}"><span class="r-name">${esc(b.name)}</span>
+           <span class="r-end">${b.n}</span></a>`).join('')}</div>` : ''}
+        ${wiki ? `<div class="gp-actions"><a class="dtab" href="https://en.wikipedia.org/wiki/${esc(wiki)}"
+          target="_blank" rel="noopener">Wikipedia ↗</a></div>` : ''}`;
+      wireClose(p);
+      p.querySelectorAll('.gp-style').forEach((a) =>
+        a.addEventListener('click', () => openStylePanel(a.dataset.style)));
+      if (wiki) {
+        fetch('https://en.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(wiki))
+          .then((r) => (r.ok ? r.json() : null))
+          .then((sum) => {
+            const box = document.getElementById('gp-enrich');
+            if (!box || !sum || p.hidden) return;
+            box.innerHTML = `${sum.thumbnail?.source ? `<img class="gp-img" src="${esc(sum.thumbnail.source)}" alt="">` : ''}
+              ${sum.extract ? `<p class="gp-bio">${esc(sum.extract.length > 420 ? sum.extract.slice(0, 420) + '…' : sum.extract)}
+                <span class="src">— Wikipedia</span></p>` : ''}`;
+          }).catch(() => { /* best-effort */ });
+      }
+    }
 
     const build = () => {
       const showLib = document.getElementById('st-lib').checked;
@@ -815,6 +885,12 @@
             kind: e.type, label: e.type.replace('-of', '') } });
         }
       }
+      // Semantic zoom: past 1× the elements stop growing — zooming in spreads
+      // the POSITIONS apart at constant node size, which is how you separate
+      // an overlapping clump. Below 1× everything shrinks normally.
+      let cyRef = null;
+      const zd = () => (cyRef ? Math.max(cyRef.zoom(), 1) : 1);
+      const nodeSize = (n) => (n.data('ext') ? 10 : 14 + Math.sqrt(n.data('tracks')) * 2.4) / zd();
       const cy = cytoscape({
         container: document.getElementById('dv-graph'),
         elements: els,
@@ -824,36 +900,56 @@
             label: 'data(label)',
             color: '#e5edf0',
             'font-family': 'Quantico, sans-serif',
-            'font-size': 12,
+            'font-size': () => 12 / zd(),
             'text-valign': 'bottom',
             'text-margin-y': 4,
-            width: (n) => n.data('ext') ? 10 : 14 + Math.sqrt(n.data('tracks')) * 2.4,
-            height: (n) => n.data('ext') ? 10 : 14 + Math.sqrt(n.data('tracks')) * 2.4,
+            width: nodeSize,
+            height: nodeSize,
           } },
-          { selector: 'node[ext = 1]', style: { color: '#91a7b0', 'font-size': 10 } },
-          { selector: 'edge', style: { 'curve-style': 'bezier', 'font-size': 9,
-            color: '#91a7b0', 'text-opacity': 0, label: 'data(label)' } },
+          { selector: 'node[ext = 1]', style: { color: '#91a7b0', 'font-size': () => 10 / zd() } },
+          { selector: 'edge', style: { 'curve-style': 'bezier', 'font-size': () => 9 / zd(),
+            color: '#91a7b0', 'text-opacity': 0, label: 'data(label)',
+            'arrow-scale': () => 1 / zd() } },
           { selector: 'edge[kind = "lib"]', style: {
-            'line-color': '#3a5a68', width: (e) => Math.min(1 + e.data('w') * 0.8, 7) } },
+            'line-color': '#3a5a68', width: (e) => Math.min(1 + e.data('w') * 0.8, 7) / zd() } },
           { selector: 'edge[kind = "origin-of"]', style: {
-            'line-color': '#ffd166', width: 1.6, 'target-arrow-shape': 'triangle', 'target-arrow-color': '#ffd166' } },
+            'line-color': '#ffd166', width: () => 1.6 / zd(), 'target-arrow-shape': 'triangle', 'target-arrow-color': '#ffd166' } },
           { selector: 'edge[kind = "subgenre-of"]', style: {
-            'line-color': '#4aa8ff', width: 1.4, 'target-arrow-shape': 'triangle', 'target-arrow-color': '#4aa8ff' } },
+            'line-color': '#4aa8ff', width: () => 1.4 / zd(), 'target-arrow-shape': 'triangle', 'target-arrow-color': '#4aa8ff' } },
           { selector: 'edge[kind = "influenced"]', style: {
-            'line-color': '#b78cff', width: 1.2, 'line-style': 'dashed',
+            'line-color': '#b78cff', width: () => 1.2 / zd(), 'line-style': 'dashed',
             'target-arrow-shape': 'triangle', 'target-arrow-color': '#b78cff' } },
           { selector: 'edge[kind = "fusion"]', style: {
-            'line-color': '#ff6b8f', width: 1.2, 'line-style': 'dotted' } },
+            'line-color': '#ff6b8f', width: () => 1.2 / zd(), 'line-style': 'dotted' } },
           { selector: 'edge:selected, edge.hl', style: { 'text-opacity': 1 } },
           { selector: 'node:selected', style: { 'border-width': 2, 'border-color': '#fff' } },
         ],
         layout: { name: 'cose', idealEdgeLength: 120, nodeRepulsion: 200000, numIter: 2500, animate: false },
         wheelSensitivity: 0.3,
       });
+      cyRef = cy;
+      window.__scy = cy; // console/debug handles
+      window.__spanel = openStylePanel;
+      let zoomTick = false;
+      cy.on('zoom', () => {
+        if (zoomTick) return;
+        zoomTick = true;
+        requestAnimationFrame(() => { zoomTick = false; cy.style().update(); });
+      });
       const ro = new ResizeObserver(() => { cy.resize(); cy.fit(undefined, 30); });
       ro.observe(document.getElementById('dv-graph'));
       cy.on('mouseover', 'edge', (ev) => ev.target.addClass('hl'));
       cy.on('mouseout', 'edge', (ev) => ev.target.removeClass('hl'));
+      let lastTap = { id: null, t: 0 };
+      cy.on('tap', 'node', (ev) => {
+        const now = Date.now();
+        if (lastTap.id === ev.target.id() && now - lastTap.t < 400) {
+          lastTap = { id: null, t: 0 };
+          openStylePanel(ev.target.id());
+          return;
+        }
+        lastTap = { id: ev.target.id(), t: now };
+      });
       cy.on('tap', 'node', (ev) => {
         const s = ev.target.id();
         const strip = document.getElementById('gsel');

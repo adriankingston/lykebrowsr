@@ -380,6 +380,9 @@ table.tracks td.len { text-align: right; }
 .gp-bio .src { color: var(--muted); font-size: 12px; }
 .gpanel .sect { margin: 20px 0 8px; }
 .gp-actions { display: flex; gap: 8px; margin-top: 16px; }
+.gp-rel { margin: 6px 0; font-size: 13px; }
+.gp-rel .r-sub { display: inline-block; min-width: 96px; }
+.gp-style { cursor: pointer; }
 
 /* Hover-expand button, pinned beside the hovered node */
 #gplus {
