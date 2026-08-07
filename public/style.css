@@ -177,9 +177,30 @@ a:hover { color: var(--accent); }
 
 /* Home */
 .datasets { margin-top: 26px; }
-#view.home { display: flex; flex-direction: column; }
-#view.home .datasets { display: flex; flex-direction: column; flex: 1; }
-#view.home .more-note { margin-top: auto; padding-top: 40px; }
+#view.home .sect { text-align: center; }
+#view.home .home-views { justify-content: center; }
+/* First-album covers for the top lyked artists, dimmed behind everything.
+   Negative z-index paints above the body background but below all content. */
+.home-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  grid-template-rows: repeat(4, 1fr);
+  pointer-events: none;
+}
+.home-bg .hcov {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 1.4s ease;
+}
+.home-bg .hcov.on { opacity: 0.13; }
+/* The data/ hint lives in the shared footer but only shows on home. */
+.foot-more { display: none; }
+#view.home ~ #credit .foot-more { display: inline; }
 
 /* Section headings */
 .sect {

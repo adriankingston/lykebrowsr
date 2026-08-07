@@ -148,8 +148,45 @@
   });
 
   // --- Home ------------------------------------------------------------------
+  // Decorative wall behind the home page: the first album's cover for each of
+  // the top-20 lyked artists, dimmed and inert. Covers hotlink from the Cover
+  // Art Archive; the release-group browses ride the polite queue and cache, so
+  // the wall assembles progressively on first visit and instantly after.
+  async function homeCovers() {
+    const bg = view.querySelector('.home-bg');
+    if (!bg) return;
+    try {
+      const d = await loadDataset('liked-music');
+      if (!d.enr || !view.querySelector('.home-bg')) return;
+      const top = mergedArtists(d).artists.sort((x, y) => y.n - x.n).slice(0, 20);
+      bg.innerHTML = top.map((_, i) => `<img class="hcov" data-i="${i}" alt="">`).join('');
+      top.forEach(async (a, i) => {
+        try {
+          const rgs = await api(`/api/browse?type=release-group&artist=${a.id}&limit=100`);
+          const albums = (rgs['release-groups'] || [])
+            .filter((g) => g['primary-type'] === 'Album')
+            .sort((x, y) => (x['first-release-date'] || '9999').localeCompare(y['first-release-date'] || '9999'))
+            .slice(0, 3); // fallbacks for first albums with no cover in CAA
+          const img = view.querySelector(`.hcov[data-i="${i}"]`);
+          if (!img || !albums.length) return;
+          let tryIdx = 0;
+          img.onerror = () => {
+            tryIdx += 1;
+            if (albums[tryIdx]) img.src = `https://coverartarchive.org/release-group/${albums[tryIdx].id}/front-250`;
+            else img.remove();
+          };
+          img.onload = () => img.classList.add('on');
+          img.src = `https://coverartarchive.org/release-group/${albums[0].id}/front-250`;
+        } catch { /* decorative — a missing tile is fine */ }
+      });
+    } catch { /* decorative */ }
+  }
+
   async function renderHome() {
-    view.innerHTML = `<div class="datasets" id="datasets"></div>`;
+    view.innerHTML = `
+      <div class="home-bg" aria-hidden="true"></div>
+      <div class="datasets" id="datasets"></div>`;
+    homeCovers();
     try {
       const { sets } = await api('/api/data');
       const hasLiked = sets.some((s) => s.name === 'liked-music');
@@ -173,8 +210,7 @@
               <span class="r-name">${esc(s.name)}</span>
               <span class="r-end">${(s.bytes / 1024).toFixed(1)} KB</span>
             </a>`).join('')}
-          </div>` : ''}
-        <p class="more-note">Drop a .json file in <code>data/</code> to add more.</p>`;
+          </div>` : ''}`;
     } catch { /* datasets are optional */ }
   }
 
