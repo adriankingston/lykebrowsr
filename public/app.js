@@ -606,15 +606,31 @@
       }
     }
 
+    // Record companies: a label that released ≥2 liked artists becomes a
+    // square node — the scene infrastructure (Fat Wreck, Epitaph…) made
+    // visible. Top-3 labels per artist keeps one-off reissue imprints out.
+    const labelMap = new Map();
+    for (const a of artists) {
+      for (const l of (a.labels || []).slice(0, 3)) {
+        if (!labelMap.has(l.id)) labelMap.set(l.id, { id: l.id, name: l.name, artists: [] });
+        labelMap.get(l.id).artists.push(a);
+      }
+    }
+    for (const [lid, lb] of [...labelMap]) {
+      if (lb.artists.length < 2) { labelMap.delete(lid); continue; }
+      for (const a of lb.artists) pushEdge(a.id, lid, 'label', 'label');
+    }
+
     const connected = new Set();
     for (const e of edgeEls) { connected.add(e.data.source); connected.add(e.data.target); }
     const shownBands = artists.filter((a) => connected.has(a.id)).length;
     const shownPeople = [...personNodes.keys()].filter((id) => connected.has(id) && !byId.has(id)).length;
     view.innerHTML = `${head}
       <p class="ent-meta">${shownBands} of ${artists.length} liked artists, joined through
-        ${shownPeople} connecting musicians (diamonds). Unconnected artists and one-band members are
-        hidden — drag, scroll to zoom, click a node to select, <strong>double-click for its story</strong>,
-        <strong>hover and hit +</strong> to pull in relationships beyond your likes (grey) and find new artists.</p>
+        ${shownPeople} connecting musicians (diamonds) and ${labelMap.size} shared record labels (squares).
+        Unconnected artists and one-band members are hidden — drag, scroll to zoom, click a node to select,
+        <strong>double-click for its story</strong>, <strong>hover and hit +</strong> to pull in relationships
+        beyond your likes (grey) and find new artists.</p>
       <div class="gwrap">
         <div id="dv-graph"></div>
         <aside id="gpanel" class="gpanel" hidden></aside>
@@ -630,6 +646,10 @@
     for (const [pid, name] of personNodes) {
       if (byId.has(pid) || !connected.has(pid)) continue;
       els.push({ data: { id: pid, label: name, n: 0, col: '#ffd166', person: 1, conn: 1 } });
+    }
+    for (const lb of labelMap.values()) {
+      els.push({ data: { id: lb.id, label: lb.name, n: lb.artists.length,
+        col: '#8fd0da', person: 0, conn: 0, kind: 'label' } });
     }
     els.push(...edgeEls);
     const cy = cytoscape({
@@ -655,6 +675,14 @@
           'background-color': '#4d5a63', color: '#91a7b0', 'font-size': 9,
           width: 12, height: 12,
         } },
+        { selector: 'node[kind = "label"]', style: {
+          shape: 'round-rectangle',
+          'background-color': '#8fd0da',
+          color: '#8fd0da',
+          'font-size': 10,
+          width: (n) => Math.min(11 + n.data('n') * 2.2, 32),
+          height: (n) => Math.min(11 + n.data('n') * 2.2, 32) * 0.72,
+        } },
         { selector: 'node.xp', style: { 'border-width': 2, 'border-color': '#8fd0da' } },
         { selector: 'edge', style: {
           width: 1.4,
@@ -667,6 +695,9 @@
         } },
         { selector: 'edge[kind = "collab"]', style: {
           'line-color': '#b78cff', 'line-style': 'dashed',
+        } },
+        { selector: 'edge[kind = "label"]', style: {
+          'line-color': '#31525e', 'line-style': 'dotted', width: 1.1,
         } },
         { selector: 'edge:selected, edge.hl', style: { 'text-opacity': 1, 'line-color': '#2ee6c8' } },
         { selector: 'node:selected', style: { 'border-width': 2, 'border-color': '#fff' } },
@@ -698,7 +729,7 @@
     const expandedNodes = new Set();
     async function expandNode(id) {
       const n0 = cy.getElementById(id);
-      if (n0.empty()) return;
+      if (n0.empty() || n0.data('kind') === 'label') return;
       n0.addClass('xp');
       if (expandedNodes.has(id)) return;
       expandedNodes.add(id);
@@ -751,6 +782,32 @@
     async function openPanel(id) {
       const p = document.getElementById('gpanel');
       if (!p) return;
+      if (labelMap.has(id)) {
+        const lbInfo = labelMap.get(id);
+        p.hidden = false;
+        p.innerHTML = `<button class="gp-x" aria-label="Close">×</button>
+          <h3 class="gp-name">${esc(lbInfo.name)}</h3><p class="loading">Looking up…</p>`;
+        wireClose(p);
+        try {
+          const lb = await api(`/api/lookup?type=label&id=${id}`);
+          p.innerHTML = `
+            <button class="gp-x" aria-label="Close">×</button>
+            <span class="ent-kind">Label</span>
+            <h3 class="gp-name">${esc(lb.name)}</h3>
+            <p class="r-sub">${esc([lb.type, lb.area?.name, lb.country, lifespan(lb['life-span']), lb.disambiguation]
+              .filter(Boolean).join(' · '))}</p>
+            <h4 class="sect">Your artists on this label</h4>
+            <div class="rows">${lbInfo.artists.sort((x, y) => y.n - x.n).map((x) => `
+              <a class="row" href="#/artist/${x.id}"><span class="r-name">${esc(x.name)}</span>${yt(x.name)}
+               <span class="r-end">${x.n} track${x.n === 1 ? '' : 's'}</span></a>`).join('')}</div>
+            <div class="gp-actions"><a class="dtab" href="#/label/${id}">open label →</a></div>`;
+          wireClose(p);
+        } catch (e) {
+          p.innerHTML = `<button class="gp-x" aria-label="Close">×</button><p class="error">${esc(e.message)}</p>`;
+          wireClose(p);
+        }
+        return;
+      }
       const known = byId.get(id);
       p.hidden = false;
       p.innerHTML = `<button class="gp-x" aria-label="Close">×</button>
@@ -771,6 +828,8 @@
             .filter(Boolean).join(' · '))}</p>
           <div id="gp-enrich"></div>
           ${genres.length ? `<div class="tags">${genres.map((g) => `<span class="tag">${esc(g.name)}</span>`).join('')}</div>` : ''}
+          ${(known?.labels || []).length ? `<p class="gp-rel"><span class="r-sub">on</span> ${known.labels.slice(0, 3).map((l) =>
+            `<a href="#/label/${l.id}">${esc(l.name)}</a>`).join(', ')}</p>` : ''}
           ${bands.length ? `<h4 class="sect">Plays in</h4><div class="rows">${bands.map((b) =>
             `<a class="row" href="#/artist/${b.id}"><span class="r-name">${esc(b.name)}</span>${yt(b.name)}</a>`).join('')}</div>` : ''}
           ${likedTracks.length ? `<h4 class="sect">Lyked tracks (${likedTracks.length})</h4>
@@ -823,6 +882,7 @@
       hovHide = setTimeout(() => { hov.hidden = true; hovFor = null; }, 380);
     };
     cy.on('mouseover', 'node', (ev) => {
+      if (ev.target.data('kind') === 'label') return; // expand/play don't apply
       clearTimeout(hovHide);
       hovFor = ev.target.id();
       hov.hidden = false;
@@ -859,6 +919,14 @@
       lastTap = { id, t: now };
       const strip = document.getElementById('gsel');
       if (!strip) return;
+      if (labelMap.has(id)) {
+        const lb = labelMap.get(id);
+        strip.hidden = false;
+        strip.innerHTML = `<strong>${esc(lb.name)}</strong>
+          <span class="r-sub">released ${lb.artists.map((x) => esc(x.name)).join(', ')}</span>
+          <a href="#/label/${id}">open label →</a>`;
+        return;
+      }
       const a = byId.get(id);
       strip.hidden = false;
       const nodeName = a?.mbName || ev.target.data('label') || personNodes.get(id) || '';
@@ -1212,7 +1280,11 @@
       if (!box || !enr) return;
       const mine = liked.tracks.filter((t) => enr.artists?.[primaryName(t.artist)]?.id === id);
       if (!mine.length) return;
-      box.innerHTML = `<h2 class="sect">Lyked tracks (${mine.length})</h2>
+      const info = Object.values(enr.artists || {}).find((x) => x.id === id);
+      const labelsLine = (info?.labels || []).length
+        ? `<p class="ent-meta">on ${info.labels.slice(0, 3).map((l) =>
+            `<a href="#/label/${l.id}">${esc(l.name)}</a>`).join(', ')}</p>` : '';
+      box.innerHTML = `<h2 class="sect">Lyked tracks (${mine.length})</h2>${labelsLine}
         <table class="tracks">${mine.map((t) => {
           const rec = enr.tracks?.[t.n]?.recordingId;
           const date = enr.tracks?.[t.n]?.date;

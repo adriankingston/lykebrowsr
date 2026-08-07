@@ -225,8 +225,44 @@ async function backfillGenres() {
   log(`genre backfill done — filled ${filled}/${gaps.length}`);
 }
 
+// --- Label pass (--labels): which record companies released each artist ----
+// One release-browse per artist with inc=labels; tally the label credits
+// across up to 100 releases and keep the top few. Far better coverage than
+// artist-label "recording contract" rels, and the counts double as weight.
+async function resolveLabels() {
+  const st = load();
+  const artists = Object.entries(st.artists).filter(([, a]) => a.id);
+  log(`label pass — ${artists.length} artists`);
+  let done = 0;
+  for (const [name, a] of artists) {
+    done++;
+    if (a.labels) continue; // resumable
+    try {
+      const d = await mbFetch(`release?artist=${a.id}&limit=100&inc=labels`);
+      const tally = new Map();
+      for (const rel of d.releases || []) {
+        for (const li of rel['label-info'] || []) {
+          const lb = li.label;
+          if (!lb || !lb.id || lb.name === '[no label]') continue;
+          if (!tally.has(lb.id)) tally.set(lb.id, { id: lb.id, name: lb.name, count: 0 });
+          tally.get(lb.id).count++;
+        }
+      }
+      a.labels = [...tally.values()].sort((x, y) => y.count - x.count).slice(0, 5);
+    } catch (e) {
+      log(`labels ${name}: ${e.message}`);
+      a.labels = [];
+    }
+    if (done % 20 === 0) { save(st); log(`labels ${done}/${artists.length}`); }
+  }
+  save(st);
+  const withLabels = artists.filter(([, a]) => (a.labels || []).length).length;
+  log(`label pass done — ${withLabels}/${artists.length} artists have labels`);
+}
+
 async function main() {
   if (process.argv.includes('--genres')) return backfillGenres();
+  if (process.argv.includes('--labels')) return resolveLabels();
   const liked = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'liked-music.json'), 'utf8'));
   const st = load();
   log(`start — ${liked.tracks.length} tracks, ${Object.keys(st.tracks).length} already resolved`);
