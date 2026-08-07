@@ -177,16 +177,24 @@ a:hover { color: var(--accent); }
 
 /* Home */
 .datasets { margin-top: 26px; }
+/* The title sits a third of the way down the viewport: 33vh less the header
+   (59px) and #view's own top padding (26px). Padding, not margin, so the
+   heading's margin can't collapse through it and skew the offset. */
+#view.home .datasets { margin-top: 0; padding-top: calc(33vh - 85px); }
 #view.home .sect {
   text-align: center;
   font-size: 26px;
   color: #fff;
   border-bottom: 0;
   padding-bottom: 0;
+  margin-top: 0;
 }
 #view.home .home-views { justify-content: center; }
 /* Equal-width tabs: the widest label sets the size for all five. */
 #view.home .home-views .dtab { min-width: 110px; text-align: center; }
+/* Search moves out of the header and under the tabs on home. */
+.home-search { display: flex; justify-content: center; margin-top: 18px; }
+.home-search .search-wrap { flex: 0 1 620px; margin: 0; }
 /* First-album covers for the top lyked artists, dimmed behind everything.
    Negative z-index paints above the body background but below all content. */
 .home-bg {

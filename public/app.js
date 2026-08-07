@@ -13,6 +13,7 @@
 
   const view = document.getElementById('view');
   const form = document.getElementById('search-form');
+  const header = document.querySelector('header.top');
   const qInput = document.getElementById('q');
   const typeSel = document.getElementById('search-type');
 
@@ -126,6 +127,10 @@
   function route() {
     const parts = decodeURIComponent(location.hash.slice(1)).split('/').filter(Boolean);
     window.scrollTo(0, 0);
+    // The search form is one element that MOVES between the header and the
+    // home page (rather than a second copy), so its listeners and value come
+    // along with it. Always put it back before a render blows away #view.
+    if (form.parentElement !== header) header.appendChild(form);
     // Visual dataset views go full-bleed; everything else keeps the column.
     view.classList.toggle('wide',
       parts[0] === 'data' && ['timeline', 'bands', 'graph', 'styles'].includes(parts[2]));
@@ -203,6 +208,7 @@
             <a class="dtab" href="#/data/liked-music/graph">Graph</a>
             <a class="dtab" href="#/data/liked-music/styles">Styles</a>
           </div>` : ''}
+        <div class="home-search"></div>
         ${rest.length ? `
           <h2 class="sect">Other datasets</h2>
           <div class="rows">${rest.map((s) => `
@@ -211,6 +217,9 @@
               <span class="r-end">${(s.bytes / 1024).toFixed(1)} KB</span>
             </a>`).join('')}
           </div>` : ''}`;
+      // Relocate the header's search form to sit under the tabs (route() puts
+      // it back on the way out).
+      document.querySelector('.home-search')?.appendChild(form);
     } catch { /* datasets are optional */ }
   }
 
