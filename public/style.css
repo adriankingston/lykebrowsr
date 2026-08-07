@@ -177,8 +177,16 @@ a:hover { color: var(--accent); }
 
 /* Home */
 .datasets { margin-top: 26px; }
-#view.home .sect { text-align: center; }
+#view.home .sect {
+  text-align: center;
+  font-size: 26px;
+  color: #fff;
+  border-bottom: 0;
+  padding-bottom: 0;
+}
 #view.home .home-views { justify-content: center; }
+/* Equal-width tabs: the widest label sets the size for all five. */
+#view.home .home-views .dtab { min-width: 110px; text-align: center; }
 /* First-album covers for the top lyked artists, dimmed behind everything.
    Negative z-index paints above the body background but below all content. */
 .home-bg {
