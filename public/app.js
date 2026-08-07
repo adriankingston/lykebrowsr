@@ -286,6 +286,32 @@
     return i >= 0 ? PAL[i] : '#6b7f88';
   };
 
+  // YT Music spells the same band several ways ("Whores" / "Whores.",
+  // "METZ" / "Metz"); the resolver mapped every variant to one MBID, so
+  // merge on that — MB's canonical name displays, track counts sum, and the
+  // richest variant's genres/labels/links win.
+  function mergedArtists(d) {
+    const counts = new Map();
+    for (const t of d.liked.tracks) {
+      const k = primaryName(t.artist);
+      counts.set(k, (counts.get(k) || 0) + 1);
+    }
+    const byId = new Map();
+    for (const [name, a] of Object.entries(d.enr?.artists || {})) {
+      if (!a.id) continue;
+      if (!byId.has(a.id)) {
+        byId.set(a.id, { ...a, name: a.mbName || name, names: [], n: 0 });
+      }
+      const m = byId.get(a.id);
+      m.names.push(name);
+      m.n += counts.get(name) || 0;
+      if ((a.genres || []).length > (m.genres || []).length) m.genres = a.genres;
+      if ((a.labels || []).length > (m.labels || []).length) m.labels = a.labels;
+      if ((a.links || []).length > (m.links || []).length) m.links = a.links;
+    }
+    return { artists: [...byId.values()], byId };
+  }
+
   function dsTabs(name, active, enr) {
     const tab = (id, label) => `<a class="dtab${active === id ? ' on' : ''}"
       href="#/data/${esc(name)}${id === 'overview' ? '' : '/' + id}">${label}</a>`;
@@ -321,26 +347,31 @@
 
   function viewOverview(head, d) {
     const tracks = d.liked.tracks;
-    const byArtist = new Map();
+    // Roll artists up by resolved MBID so spelling variants count as one;
+    // unresolved names fall back to their display string.
+    const roll = new Map();
     let secs = 0;
     for (const t of tracks) {
-      const a = (t.artist || '(unknown)').trim();
-      byArtist.set(a, (byArtist.get(a) || 0) + 1);
+      const pn = primaryName(t.artist);
+      const info = d.enr?.artists?.[pn];
+      const key = info?.id || pn || '(unknown)';
+      if (!roll.has(key)) roll.set(key, { display: info?.mbName || (t.artist || '(unknown)').trim(), id: info?.id, n: 0 });
+      roll.get(key).n++;
       const p = String(t.length || '').split(':').map(Number);
       if (p.length === 2) secs += p[0] * 60 + p[1];
     }
-    const top = [...byArtist.entries()].sort((x, y) => y[1] - x[1]).slice(0, 30);
+    const top = [...roll.values()].sort((x, y) => y.n - x.n).slice(0, 30);
     const artistHref = (a) => {
       const info = d.enr?.artists?.[primaryName(a)];
       return info?.id ? `#/artist/${info.id}` : `#/search/artist/${encodeURIComponent(a)}`;
     };
     view.innerHTML = `${head}
-      <p class="ent-meta">${tracks.length} tracks · ${byArtist.size} artists · ${(secs / 3600).toFixed(1)} hours</p>
+      <p class="ent-meta">${tracks.length} tracks · ${roll.size} artists · ${(secs / 3600).toFixed(1)} hours</p>
       <h2 class="sect">Top artists</h2>
-      <div class="rows">${top.map(([a, n]) => `
-        <a class="row" href="${artistHref(a)}">
-          <span class="r-name">${esc(a)}</span>${yt(a)}
-          <span class="r-end">${n} track${n === 1 ? '' : 's'}</span>
+      <div class="rows">${top.map((a) => `
+        <a class="row" href="${a.id ? `#/artist/${a.id}` : `#/search/artist/${encodeURIComponent(a.display)}`}">
+          <span class="r-name">${esc(a.display)}</span>${yt(a.display)}
+          <span class="r-end">${a.n} track${a.n === 1 ? '' : 's'}</span>
         </a>`).join('')}</div>
       <h2 class="sect">All tracks</h2>
       <table class="tracks">
@@ -451,14 +482,7 @@
   function viewBands(head, d) {
     if (!d.enr) { view.innerHTML = `${head}<p class="loading">No resolved data yet.</p>`; return; }
     const { topStyles } = joinTracks(d);
-    const counts = new Map();
-    for (const t of d.liked.tracks) {
-      const k = primaryName(t.artist);
-      counts.set(k, (counts.get(k) || 0) + 1);
-    }
-    const artists = Object.entries(d.enr.artists || {})
-      .filter(([, a]) => a.id)
-      .map(([name, a]) => ({ name, ...a, n: counts.get(name) || 0 }));
+    const { artists } = mergedArtists(d);
     const mode = (location.search || '').includes('by=country') ? 'country' : 'style';
 
     const styleKey = (a) => a.genres?.[0]?.name || 'unknown';
@@ -583,15 +607,7 @@
   function viewGraph(head, d) {
     if (!d.enr) { view.innerHTML = `${head}<p class="loading">No resolved data yet.</p>`; return; }
     const { topStyles } = joinTracks(d);
-    const counts = new Map();
-    for (const t of d.liked.tracks) {
-      const k = primaryName(t.artist);
-      counts.set(k, (counts.get(k) || 0) + 1);
-    }
-    const artists = Object.entries(d.enr.artists || {})
-      .filter(([, a]) => a.id)
-      .map(([name, a]) => ({ name, ...a, n: counts.get(name) || 0 }));
-    const byId = new Map(artists.map((a) => [a.id, a]));
+    const { artists, byId } = mergedArtists(d);
 
     // person id → the liked groups they play(ed) in, from the groups' rels.
     const memberOf = new Map();
@@ -1007,27 +1023,21 @@
     if (!d.enr) { view.innerHTML = `${head}<p class="loading">No resolved data yet.</p>`; return; }
     let gg = null;
     try { gg = await api('/api/data?set=genre-graph'); } catch { /* lineage not resolved yet */ }
-    const counts = new Map();
-    for (const t of d.liked.tracks) {
-      const k = primaryName(t.artist);
-      counts.set(k, (counts.get(k) || 0) + 1);
-    }
+    const { artists: mArtists } = mergedArtists(d);
     const stats = new Map(); // style → {tracks, bands:[{name,id,n}]}
     const pair = new Map();  // "a|b" → {a, b, bands:[]}
-    for (const [name, a] of Object.entries(d.enr.artists || {})) {
-      if (!a.id) continue;
-      const n = counts.get(name) || 0;
+    for (const a of mArtists) {
       const ss = (a.genres || []).slice(0, 4).map((g) => g.name.toLowerCase());
       for (const s of ss) {
         if (!stats.has(s)) stats.set(s, { tracks: 0, bands: [] });
-        stats.get(s).tracks += n;
-        stats.get(s).bands.push({ name, id: a.id, n });
+        stats.get(s).tracks += a.n;
+        stats.get(s).bands.push({ name: a.name, id: a.id, n: a.n });
       }
       for (let i = 0; i < ss.length; i++) {
         for (let j = i + 1; j < ss.length; j++) {
           const key = [ss[i], ss[j]].sort().join('|');
           if (!pair.has(key)) pair.set(key, { a: ss[i], b: ss[j], bands: [] });
-          pair.get(key).bands.push(name);
+          pair.get(key).bands.push(a.name);
         }
       }
     }
