@@ -1437,31 +1437,50 @@
     }).catch(() => {});
 
     const PAGE = 100;
+    // Sorting is within the loaded page (MB's browse can't sort server-side);
+    // MB's stable paging order still guarantees next/previous never skips.
+    const SORTS = {
+      date: (x, y) => (x.date || '9999').localeCompare(y.date || '9999'),
+      album: (x, y) => x.title.localeCompare(y.title) || SORTS.date(x, y),
+      artist: (x, y) => credit(x['artist-credit']).localeCompare(credit(y['artist-credit'])) || SORTS.date(x, y),
+    };
+    let sortMode = 'date';
+    let cur = null; // { offset, data } — re-sorts don't refetch
+    const renderPage = () => {
+      const box = document.getElementById('lbrel');
+      if (!box || !cur) return;
+      const { offset, data: d } = cur;
+      const total = d['release-count'] || (d.releases || []).length;
+      const rels = [...(d.releases || [])].sort(SORTS[sortMode]);
+      const sorter = `<div class="pgnav"><span class="r-sub">sort</span>
+        ${['album', 'artist', 'date'].map((s) =>
+          `<button class="dtab${sortMode === s ? ' on' : ''}" data-srt="${s}">${s}</button>`).join('')}
+      </div>`;
+      const nav = total > PAGE ? `<div class="pgnav">
+        <button class="dtab" data-pg="${offset - PAGE}" ${offset <= 0 ? 'disabled' : ''}>← previous</button>
+        <span class="r-sub">${offset + 1}–${Math.min(offset + PAGE, total)} of ${total}</span>
+        <button class="dtab" data-pg="${offset + PAGE}" ${offset + PAGE >= total ? 'disabled' : ''}>next →</button>
+      </div>` : '';
+      box.innerHTML = `${sorter}${nav}<div class="rows">${rels.map((r) => `
+        <a class="row" href="#/release/${r.id}">
+          <span class="r-name">${esc(r.title)}</span>${yt(`${credit(r['artist-credit'])} ${r.title}`.trim())}
+          <span class="r-sub">${esc([credit(r['artist-credit']), r.country, r.status].filter(Boolean).join(' · '))}</span>
+          <span class="r-end">${esc(r.date || '')}</span>
+        </a>`).join('')}</div>${nav}`;
+      box.querySelectorAll('[data-pg]').forEach((b) =>
+        b.addEventListener('click', () => renderReleases(Number(b.dataset.pg))));
+      box.querySelectorAll('[data-srt]').forEach((b) =>
+        b.addEventListener('click', () => { sortMode = b.dataset.srt; renderPage(); }));
+    };
     const renderReleases = async (offset) => {
       const el = document.getElementById('lbrel');
       if (!el) return;
       el.innerHTML = '<p class="loading">Loading…</p>';
       try {
-        const d = await api(`/api/browse?type=release&label=${id}&limit=${PAGE}&offset=${offset}&inc=artist-credits`);
-        const box = document.getElementById('lbrel');
-        if (!box) return; // user navigated away mid-fetch
-        const total = d['release-count'] || (d.releases || []).length;
-        // Each page sorts by date internally; MB's own paging order is stable
-        // across pages, so next/previous never skips or repeats releases.
-        const rels = (d.releases || []).sort((x, y) => (x.date || '9999').localeCompare(y.date || '9999'));
-        const nav = total > PAGE ? `<div class="pgnav">
-          <button class="dtab" data-pg="${offset - PAGE}" ${offset <= 0 ? 'disabled' : ''}>← previous</button>
-          <span class="r-sub">${offset + 1}–${Math.min(offset + PAGE, total)} of ${total}</span>
-          <button class="dtab" data-pg="${offset + PAGE}" ${offset + PAGE >= total ? 'disabled' : ''}>next →</button>
-        </div>` : '';
-        box.innerHTML = `${nav}<div class="rows">${rels.map((r) => `
-          <a class="row" href="#/release/${r.id}">
-            <span class="r-name">${esc(r.title)}</span>${yt(`${credit(r['artist-credit'])} ${r.title}`.trim())}
-            <span class="r-sub">${esc([credit(r['artist-credit']), r.country, r.status].filter(Boolean).join(' · '))}</span>
-            <span class="r-end">${esc(r.date || '')}</span>
-          </a>`).join('')}</div>${nav}`;
-        box.querySelectorAll('[data-pg]').forEach((b) =>
-          b.addEventListener('click', () => renderReleases(Number(b.dataset.pg))));
+        const data = await api(`/api/browse?type=release&label=${id}&limit=${PAGE}&offset=${offset}&inc=artist-credits`);
+        if (!document.getElementById('lbrel')) return; // navigated away mid-fetch
+        cur = { offset, data };
+        renderPage();
       } catch (e) {
         const box = document.getElementById('lbrel');
         if (box) box.innerHTML = `<p class="error">Releases failed: ${esc(e.message)}</p>`;
