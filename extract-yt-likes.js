@@ -108,12 +108,16 @@ async function post(body, attempt = 0) {
 }
 
 const txt = (fc) => fc?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.map((r) => r.text).join('') ?? '';
+// YouTube flip-flops between crediting a band and its auto-generated
+// "<band> - Topic" channel across pulls; strip the suffix so the same song
+// always keys the same and the noise never reaches the dataset.
+const deTopic = (s) => s.replace(/ - Topic$/, '');
 const parseItems = (items) => (items || []).flatMap((it) => {
   const r = it.musicResponsiveListItemRenderer;
   if (!r) return [];
   const f = r.flexColumns || [];
   const dur = r.fixedColumns?.[0]?.musicResponsiveListItemFixedColumnRenderer?.text?.runs?.[0]?.text ?? '';
-  return [{ title: txt(f[0]), artist: txt(f[1]), album: txt(f[2]), length: dur }];
+  return [{ title: txt(f[0]), artist: deTopic(txt(f[1])), album: txt(f[2]), length: dur }];
 });
 const findCont = (items) => (items || []).map((it) =>
   it.continuationItemRenderer?.continuationEndpoint?.continuationCommand?.token).find(Boolean);
@@ -162,6 +166,13 @@ async function main() {
 
   const bad = tracks.filter((t) => /�/.test(t.title + t.artist + t.album)).length;
   if (bad) throw new Error(`${bad} tracks have replacement characters — refusing to overwrite`);
+
+  // Nothing added or removed → leave the file untouched, so a scheduled run
+  // on a quiet day produces no diff, no commit, no redeploy.
+  if (!added.length && !gone.length && tracks.length === prev.tracks.length) {
+    console.log(`${tracks.length} tracks — no change since last pull, file left as is`);
+    return;
+  }
 
   fs.writeFileSync(OUT, JSON.stringify({
     source: 'YouTube Music — Liked Music (playlist LM)',
