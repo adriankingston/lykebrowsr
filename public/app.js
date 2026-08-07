@@ -147,23 +147,7 @@
 
   // --- Home ------------------------------------------------------------------
   async function renderHome() {
-    view.innerHTML = `
-      <div class="hero">
-        <h1>dig into the detail</h1>
-        <p>The catalogue behind the graph — search any artist, album, recording or
-           label, and follow the credits wherever they lead.
-           Companion to <a href="${RAWLR}" target="_blank" rel="noopener">musikrawlr</a>.</p>
-        <p class="starters">
-          <button class="chip" data-go="#/artist/149e6720-4e4a-41a4-afca-6d29083fc091">Bad Religion</button>
-          <button class="chip" data-go="#/artist/25302723-b24f-4d0d-ab5d-1b4ae0195ac6">Swingin’ Utters</button>
-          <button class="chip" data-go="#/artist/449c400c-8312-4c1d-bed8-c8d774090759">METZ</button>
-          <button class="chip" data-go="#/artist/d5da1841-9bc8-4813-9f89-11098090148e">The Fall</button>
-          <button class="chip" data-go="#/artist/626e7b64-3035-4f58-92a6-49790f600e30">John Reis</button>
-        </p>
-      </div>
-      <div class="datasets" id="datasets"></div>`;
-    view.querySelectorAll('[data-go]').forEach((b) =>
-      b.addEventListener('click', () => { location.hash = b.dataset.go; }));
+    view.innerHTML = `<div class="datasets" id="datasets"></div>`;
     try {
       const { sets } = await api('/api/data');
       const hasLiked = sets.some((s) => s.name === 'liked-music');
