@@ -368,23 +368,26 @@
     const lanes = [...topStyles, 'other', 'unknown']
       .map((s) => ({ style: s, tracks: dated.filter((t) => styleOf(t) === s) }))
       .filter((l) => l.tracks.length);
-    const W = 1000;
-    const LANE = 40;
-    const LEFT = 150;
+    // A wide, horizontally-scrollable canvas: ~30px per year gives every dot
+    // room to be a dot. Lane labels sit OUTSIDE the scroll so they stay put.
+    const LANE = 44;
+    const PXY = 30;
+    const PADL = 24;
+    const W = Math.max(1100, (y1 - y0) * PXY + PADL + 30);
     const H = lanes.length * LANE + 46;
-    const x = (yr) => LEFT + (yr - y0) / (y1 - y0) * (W - LEFT - 20);
-    const jitter = (n) => ((n * 2654435761) % 24) - 12;
-    let svg = `<svg viewBox="0 0 ${W} ${H}" class="tl-chart" role="img" aria-label="Songs by original release year and style">`;
-    for (let yr = Math.ceil(y0 / 10) * 10; yr <= y1; yr += 10) {
-      svg += `<line x1="${x(yr)}" y1="20" x2="${x(yr)}" y2="${H - 26}" class="tl-grid"/>
-        <text x="${x(yr)}" y="${H - 10}" class="tl-tick">${yr}</text>`;
+    const x = (yr) => PADL + (yr - y0) * PXY;
+    const jitter = (n) => ((n * 2654435761) % 26) - 13;
+    let svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" class="tl-chart" role="img" aria-label="Songs by original release year and style">`;
+    for (let yr = Math.ceil(y0 / 5) * 5; yr <= y1; yr += 5) {
+      const major = yr % 10 === 0;
+      svg += `<line x1="${x(yr)}" y1="20" x2="${x(yr)}" y2="${H - 26}" class="tl-grid${major ? '' : ' tl-grid-minor'}"/>
+        ${major ? `<text x="${x(yr)}" y="${H - 10}" class="tl-tick">${yr}</text>` : ''}`;
     }
     lanes.forEach((l, i) => {
       const cy = 26 + i * LANE + LANE / 2;
       const col = l.style === 'other' || l.style === 'unknown' ? '#6b7f88' : styleColor(l.style, topStyles);
-      svg += `<text x="${LEFT - 10}" y="${cy + 4}" class="tl-lane" fill="${col}">${esc(l.style)} (${l.tracks.length})</text>`;
       for (const t of l.tracks) {
-        svg += `<circle cx="${x(t.year).toFixed(1)}" cy="${(cy + jitter(t.n) * 0.9).toFixed(1)}" r="3.4"
+        svg += `<circle cx="${x(t.year).toFixed(1)}" cy="${(cy + jitter(t.n)).toFixed(1)}" r="4"
           fill="${col}" class="tl-dot" data-rec="${t.recordingId || ''}">
           <title>${esc(t.title)} — ${esc(t.artist)} (${t.year})</title></circle>`;
       }
@@ -393,8 +396,18 @@
     const undated = tracks.length - dated.length;
     view.innerHTML = `${head}
       <p class="ent-meta">${dated.length} songs placed by the <em>earliest release MusicBrainz knows</em> for each
-        recording${undated ? ` · ${undated} not yet resolved` : ''}. Hover a dot; click opens the recording.</p>
-      ${svg}`;
+        recording${undated ? ` · ${undated} not yet resolved` : ''}. Scroll sideways through the years —
+        hover a dot; click opens the recording.</p>
+      <div class="tl-wrap">
+        <div class="tl-labels">${lanes.map((l) => {
+          const col = l.style === 'other' || l.style === 'unknown' ? '#6b7f88' : styleColor(l.style, topStyles);
+          return `<div class="tl-label" style="color:${col}">${esc(l.style)} (${l.tracks.length})</div>`;
+        }).join('')}</div>
+        <div class="tl-scroll">${svg}</div>
+      </div>`;
+    // Land on the busy end of the timeline, not 1976.
+    const sc = view.querySelector('.tl-scroll');
+    sc.scrollLeft = sc.scrollWidth;
     view.querySelectorAll('.tl-dot').forEach((c) => c.addEventListener('click', () => {
       if (c.dataset.rec) location.hash = `#/recording/${c.dataset.rec}`;
     }));

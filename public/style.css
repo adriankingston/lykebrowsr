@@ -310,12 +310,34 @@ table.tracks td.len { text-align: right; }
 .dtab-note { color: var(--muted); font-size: 12px; margin-left: 8px; }
 .bv-toggle { display: flex; gap: 8px; margin: 14px 0 4px; }
 
-.tl-chart { width: 100%; height: auto; background: var(--surface); border: 1px solid var(--line); margin-top: 14px; }
+.tl-wrap {
+  display: flex;
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.tl-labels {
+  flex: none;
+  padding-top: 26px;
+  border-right: 1px solid var(--line);
+}
+.tl-label {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 12px 0 16px;
+  font-size: 11px;
+  white-space: nowrap;
+  font-family: Quantico, sans-serif;
+}
+.tl-scroll { overflow-x: auto; }
+.tl-chart { display: block; }
 .tl-grid { stroke: var(--line); stroke-width: 1; }
+.tl-grid-minor { opacity: .35; }
 .tl-tick { fill: var(--muted); font-size: 11px; text-anchor: middle; font-family: Quantico, sans-serif; }
-.tl-lane { font-size: 11px; text-anchor: end; font-family: Quantico, sans-serif; }
 .tl-dot { opacity: .8; cursor: pointer; }
-.tl-dot:hover { opacity: 1; r: 5; }
+.tl-dot:hover { opacity: 1; r: 6; }
 
 /* Navigable donuts on the bands page */
 .donuts {
