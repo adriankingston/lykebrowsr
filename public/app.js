@@ -368,49 +368,82 @@
     const lanes = [...topStyles, 'other', 'unknown']
       .map((s) => ({ style: s, tracks: dated.filter((t) => styleOf(t) === s) }))
       .filter((l) => l.tracks.length);
-    // A wide, horizontally-scrollable canvas: ~30px per year gives every dot
-    // room to be a dot. Lane labels sit OUTSIDE the scroll so they stay put.
+    // A wide, horizontally-scrollable canvas — and zoomable: zoom changes the
+    // px-per-year scale (dots STAY 4px), so zooming in pulls a dense cluster
+    // apart into individual songs. Lane labels sit outside the scroll.
     const LANE = 44;
-    const PXY = 30;
     const PADL = 24;
-    const W = Math.max(1100, (y1 - y0) * PXY + PADL + 30);
     const H = lanes.length * LANE + 46;
-    const x = (yr) => PADL + (yr - y0) * PXY;
     const jitter = (n) => ((n * 2654435761) % 26) - 13;
-    let svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" class="tl-chart" role="img" aria-label="Songs by original release year and style">`;
-    for (let yr = Math.ceil(y0 / 5) * 5; yr <= y1; yr += 5) {
-      const major = yr % 10 === 0;
-      svg += `<line x1="${x(yr)}" y1="20" x2="${x(yr)}" y2="${H - 26}" class="tl-grid${major ? '' : ' tl-grid-minor'}"/>
-        ${major ? `<text x="${x(yr)}" y="${H - 10}" class="tl-tick">${yr}</text>` : ''}`;
-    }
-    lanes.forEach((l, i) => {
-      const cy = 26 + i * LANE + LANE / 2;
-      const col = l.style === 'other' || l.style === 'unknown' ? '#6b7f88' : styleColor(l.style, topStyles);
-      for (const t of l.tracks) {
-        svg += `<circle cx="${x(t.year).toFixed(1)}" cy="${(cy + jitter(t.n)).toFixed(1)}" r="4"
-          fill="${col}" class="tl-dot" data-rec="${t.recordingId || ''}">
-          <title>${esc(t.title)} — ${esc(t.artist)} (${t.year})</title></circle>`;
-      }
-    });
-    svg += '</svg>';
+    let pxy = 30; // px per year — the zoom level
     const undated = tracks.length - dated.length;
     view.innerHTML = `${head}
       <p class="ent-meta">${dated.length} songs placed by the <em>earliest release MusicBrainz knows</em> for each
         recording${undated ? ` · ${undated} not yet resolved` : ''}. Scroll sideways through the years —
-        hover a dot; click opens the recording.</p>
+        <strong>zoom</strong> with the buttons or ctrl/⌘-scroll to separate dense clusters — hover a dot;
+        click opens the recording.</p>
+      <div class="pgnav"><span class="r-sub">zoom</span>
+        <button class="dtab" id="tl-out">−</button>
+        <button class="dtab" id="tl-in">+</button>
+        <span class="r-sub" id="tl-zlvl"></span>
+      </div>
       <div class="tl-wrap">
         <div class="tl-labels">${lanes.map((l) => {
           const col = l.style === 'other' || l.style === 'unknown' ? '#6b7f88' : styleColor(l.style, topStyles);
           return `<div class="tl-label" style="color:${col}">${esc(l.style)} (${l.tracks.length})</div>`;
         }).join('')}</div>
-        <div class="tl-scroll">${svg}</div>
+        <div class="tl-scroll"></div>
       </div>`;
-    // Land on the busy end of the timeline, not 1976.
     const sc = view.querySelector('.tl-scroll');
-    sc.scrollLeft = sc.scrollWidth;
-    view.querySelectorAll('.tl-dot').forEach((c) => c.addEventListener('click', () => {
-      if (c.dataset.rec) location.hash = `#/recording/${c.dataset.rec}`;
-    }));
+
+    const renderChart = (anchorYear, anchorViewX) => {
+      const W = Math.max(1100, (y1 - y0) * pxy + PADL + 30);
+      const x = (yr) => PADL + (yr - y0) * pxy;
+      let svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" class="tl-chart" role="img" aria-label="Songs by original release year and style">`;
+      const step = pxy >= 60 ? 1 : 5;
+      for (let yr = Math.ceil(y0 / step) * step; yr <= y1; yr += step) {
+        const major = pxy >= 60 ? yr % 5 === 0 : yr % 10 === 0;
+        svg += `<line x1="${x(yr)}" y1="20" x2="${x(yr)}" y2="${H - 26}" class="tl-grid${major ? '' : ' tl-grid-minor'}"/>
+          ${major ? `<text x="${x(yr)}" y="${H - 10}" class="tl-tick">${yr}</text>` : ''}`;
+      }
+      lanes.forEach((l, i) => {
+        const cy = 26 + i * LANE + LANE / 2;
+        const col = l.style === 'other' || l.style === 'unknown' ? '#6b7f88' : styleColor(l.style, topStyles);
+        for (const t of l.tracks) {
+          svg += `<circle cx="${x(t.year).toFixed(1)}" cy="${(cy + jitter(t.n)).toFixed(1)}" r="4"
+            fill="${col}" class="tl-dot" data-rec="${t.recordingId || ''}">
+            <title>${esc(t.title)} — ${esc(t.artist)} (${t.year})</title></circle>`;
+        }
+      });
+      svg += '</svg>';
+      sc.innerHTML = svg;
+      document.getElementById('tl-zlvl').textContent = `${pxy}px / year`;
+      if (anchorYear != null) {
+        sc.scrollLeft = PADL + (anchorYear - y0) * pxy - (anchorViewX ?? sc.clientWidth / 2);
+      } else {
+        sc.scrollLeft = sc.scrollWidth; // land on the busy recent end
+      }
+      sc.querySelectorAll('.tl-dot').forEach((c) => c.addEventListener('click', () => {
+        if (c.dataset.rec) location.hash = `#/recording/${c.dataset.rec}`;
+      }));
+    };
+    const centreYear = () => y0 + (sc.scrollLeft + sc.clientWidth / 2 - PADL) / pxy;
+    const setZoom = (next, anchorYear, anchorViewX) => {
+      const clamped = Math.min(160, Math.max(8, Math.round(next)));
+      if (clamped === pxy) return;
+      pxy = clamped;
+      renderChart(anchorYear, anchorViewX);
+    };
+    document.getElementById('tl-in').addEventListener('click', () => setZoom(pxy * 1.5, centreYear()));
+    document.getElementById('tl-out').addEventListener('click', () => setZoom(pxy / 1.5, centreYear()));
+    sc.addEventListener('wheel', (e) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const viewX = e.clientX - sc.getBoundingClientRect().left;
+      const yearAtCursor = y0 + (sc.scrollLeft + viewX - PADL) / pxy;
+      setZoom(pxy * (e.deltaY < 0 ? 1.25 : 0.8), yearAtCursor, viewX);
+    }, { passive: false });
+    renderChart();
   }
 
   // Bands grouped by style or by country of origin, with a navigable pair of
