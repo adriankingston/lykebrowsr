@@ -5,7 +5,10 @@
   "description": "dig into the detail — a MusicBrainz catalogue browser, companion to musikrawlr",
   "license": "MIT",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "extract": "node extract-yt-likes.js",
+    "resolve": "node resolve-liked.js && node resolve-liked.js --genres && node resolve-liked.js --labels",
+    "update": "npm run extract && npm run resolve"
   },
   "engines": {
     "node": ">=18"

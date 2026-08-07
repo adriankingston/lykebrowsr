@@ -18,6 +18,19 @@ cp .env.example .env    # set MB_CONTACT to your email (MusicBrainz etiquette)
 node server.js          # → http://localhost:4800
 ```
 
+## Refreshing the liked-music dataset
+
+```
+npm run update    # extract from YouTube Music, then resolve against MusicBrainz
+```
+
+`extract-yt-likes.js` calls YouTube's own innertube API with the cookies in
+`YT_COOKIE` (see `.env.example`) — no browser, no clipboard. `resolve-liked.js`
+then fills in original release dates, artist MBIDs, styles and labels. Both are
+incremental: resolutions are keyed by `title|artist` and every MusicBrainz
+response is cached on disk, so a refresh only pays for what's genuinely new.
+Tracks carry a `firstSeen` date, which drives the overview's *Recently added*.
+
 ## API
 
 | Route | What it does |

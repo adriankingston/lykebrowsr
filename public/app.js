@@ -259,11 +259,16 @@
     return d;
   }
 
+  // Resolutions are keyed by "title|artist" (playlist position shifts every
+  // time a new like lands at the top); older files are keyed by position.
+  const trackKey = (t) => `${t.title}|${t.artist}`;
+  const resolutionOf = (enr, t) => enr?.tracks?.[trackKey(t)] || enr?.tracks?.[t.n] || null;
+
   // Join a track to its resolution + its artist's style; styles are bucketed
   // into the dataset's top N genres so colours stay legible.
   function joinTracks(d) {
     const tracks = d.liked.tracks.map((t) => {
-      const r = d.enr?.tracks?.[t.n] || null;
+      const r = resolutionOf(d.enr, t);
       const a = d.enr?.artists?.[primaryName(t.artist)] || null;
       return {
         ...t,
@@ -365,8 +370,24 @@
       const info = d.enr?.artists?.[primaryName(a)];
       return info?.id ? `#/artist/${info.id}` : `#/search/artist/${encodeURIComponent(a)}`;
     };
+    // Tracks carry the date we first saw them in the playlist (YouTube gives
+    // no liked-date), so the latest refresh's arrivals can lead the page.
+    const seenDates = [...new Set(tracks.map((t) => t.firstSeen).filter(Boolean))].sort();
+    const latest = seenDates.length > 1 ? seenDates[seenDates.length - 1] : null;
+    const fresh = latest ? tracks.filter((t) => t.firstSeen === latest) : [];
+    const recent = fresh.length ? `
+      <h2 class="sect">Recently added <span class="r-sub">${fresh.length} on ${esc(latest)}</span></h2>
+      <div class="rows">${fresh.slice(0, 40).map((t) => `
+        <a class="row" href="${artistHref(t.artist || '')}">
+          <span class="r-name">${esc(t.title)}</span>${yt(`${t.artist || ''} ${t.title}`.trim())}
+          <span class="r-sub">${esc(t.artist || '')}</span>
+          <span class="r-end">${esc(t.album || '')}</span>
+        </a>`).join('')}</div>
+      ${fresh.length > 40 ? `<p class="r-sub">…and ${fresh.length - 40} more</p>` : ''}` : '';
+
     view.innerHTML = `${head}
       <p class="ent-meta">${tracks.length} tracks · ${roll.size} artists · ${(secs / 3600).toFixed(1)} hours</p>
+      ${recent}
       <h2 class="sect">Top artists</h2>
       <div class="rows">${top.map((a) => `
         <a class="row" href="${a.id ? `#/artist/${a.id}` : `#/search/artist/${encodeURIComponent(a.display)}`}">
@@ -379,7 +400,8 @@
         ${tracks.map((t) => `
           <tr>
             <td class="n">${esc(t.n ?? '')}</td>
-            <td>${esc(t.title)}${yt(`${t.artist || ''} ${t.title}`.trim())}</td>
+            <td>${esc(t.title)}${yt(`${t.artist || ''} ${t.title}`.trim())}${
+              latest && t.firstSeen === latest ? '<span class="tnew" title="added in the latest refresh">new</span>' : ''}</td>
             <td><a href="${artistHref(t.artist || '')}">${esc(t.artist || '')}</a></td>
             <td class="r-sub">${esc(t.album || '')}</td>
             <td class="len">${esc(t.length || '')}</td>
@@ -1365,8 +1387,8 @@
             `<a href="#/label/${l.id}">${esc(l.name)}</a>`).join(', ')}</p>` : '';
       box.innerHTML = `<h2 class="sect">Lyked tracks (${mine.length})</h2>${labelsLine}
         <table class="tracks">${mine.map((t) => {
-          const rec = enr.tracks?.[t.n]?.recordingId;
-          const date = enr.tracks?.[t.n]?.date;
+          const rec = resolutionOf(enr, t)?.recordingId;
+          const date = resolutionOf(enr, t)?.date;
           return `<tr>
             <td class="n">${esc(t.n)}</td>
             <td>${rec ? `<a href="#/recording/${rec}">${esc(t.title)}</a>` : esc(t.title)}${yt(`${t.artist} ${t.title}`)}</td>

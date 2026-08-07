@@ -87,10 +87,28 @@ function nameMatch(a, b) {
 // Homosapien"); the first segment is the primary credit we vote with.
 const primaryName = (s) => String(s || '').split(/ & |, | feat\.? /i)[0].trim();
 
-function load() {
-  try { return JSON.parse(fs.readFileSync(OUT, 'utf8')); } catch {
-    return { source: 'liked-music', updated: null, tracks: {}, artists: {}, phase: 'tracks' };
+// Pass-1 results are keyed by "title|artist", not by playlist position: new
+// likes land at the top of the Liked Music playlist and shift every n, which
+// would silently pair each track with the previous occupant's resolution.
+const trackKey = (t) => `${t.title}|${t.artist}`;
+
+function load(liked) {
+  let st;
+  try { st = JSON.parse(fs.readFileSync(OUT, 'utf8')); } catch {
+    return { source: 'liked-music', keyed: 'title|artist', updated: null, tracks: {}, artists: {}, phase: 'tracks' };
   }
+  if (st.keyed !== 'title|artist' && liked) {
+    // Migrate a position-keyed checkpoint. Safe only where the numbering still
+    // matches the dataset it was built from; anything that doesn't line up is
+    // dropped and simply re-resolves (cached, so it costs no requests).
+    const byN = st.tracks || {};
+    const moved = {};
+    for (const t of liked.tracks) if (byN[t.n]) moved[trackKey(t)] = byN[t.n];
+    log(`migrated checkpoint: ${Object.keys(moved).length}/${Object.keys(byN).length} entries re-keyed by title|artist`);
+    st.tracks = moved;
+    st.keyed = 'title|artist';
+  }
+  return st;
 }
 const save = (st) => {
   st.updated = new Date().toISOString();
@@ -264,13 +282,18 @@ async function main() {
   if (process.argv.includes('--genres')) return backfillGenres();
   if (process.argv.includes('--labels')) return resolveLabels();
   const liked = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'liked-music.json'), 'utf8'));
-  const st = load();
-  log(`start — ${liked.tracks.length} tracks, ${Object.keys(st.tracks).length} already resolved`);
+  const st = load(liked);
+  // Tracks that have left the playlist leave the dataset; drop their entries
+  // so the checkpoint doesn't grow forever.
+  const live = new Set(liked.tracks.map(trackKey));
+  for (const k of Object.keys(st.tracks)) if (!live.has(k)) delete st.tracks[k];
+  const todo = liked.tracks.filter((t) => !st.tracks[trackKey(t)]).length;
+  log(`start — ${liked.tracks.length} tracks, ${Object.keys(st.tracks).length} already resolved, ${todo} to do`);
 
   // --- Pass 1: recordings ----------------------------------------------------
   let done = 0;
   for (const t of liked.tracks) {
-    if (st.tracks[t.n]) { done++; continue; }
+    if (st.tracks[trackKey(t)]) { done++; continue; }
     const artist = primaryName(t.artist);
     const rec = { matched: false, date: null, artistId: null };
     try {
@@ -298,17 +321,20 @@ async function main() {
         rec.recordingId = cands[0].id;
       }
     } catch (e) { log(`track ${t.n} "${t.title}" failed: ${e.message}`); }
-    st.tracks[t.n] = rec;
+    st.tracks[trackKey(t)] = rec;
     done++;
     if (done % 25 === 0) { save(st); log(`tracks ${done}/${liked.tracks.length}`); }
   }
   save(st);
-  log(`pass 1 complete — ${Object.values(st.tracks).filter((r) => r.matched).length}/${liked.tracks.length} matched`);
+  // Counted over tracks, not checkpoint keys: the playlist holds duplicates,
+  // which share one key (and one lookup) but are several tracks.
+  log(`pass 1 complete — ${liked.tracks.filter((t) => st.tracks[trackKey(t)]?.matched).length}/${liked.tracks.length} matched `
+    + `(${Object.keys(st.tracks).length} unique title+artist)`);
 
   // --- Majority vote: dataset artist name → MBID -----------------------------
   const votes = {};
   for (const t of liked.tracks) {
-    const r = st.tracks[t.n];
+    const r = st.tracks[trackKey(t)];
     if (!r?.artistId) continue;
     const key = primaryName(t.artist);
     (votes[key] = votes[key] || {})[r.artistId] = (votes[key][r.artistId] || 0) + 1;
