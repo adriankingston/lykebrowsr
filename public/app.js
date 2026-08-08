@@ -821,6 +821,8 @@
         // Focus mode: everything beyond two hops recedes, labels included.
         { selector: '.dim', style: { opacity: 0.12, 'text-opacity': 0 } },
         { selector: 'node.focus', style: { 'text-opacity': 1 } },
+        // "Names: clicked" mode — a node stays anonymous until you touch it.
+        { selector: 'node.hidename', style: { 'text-opacity': 0 } },
       ],
       layout: { name: 'preset' }, // real layout runs below, after handlers attach
       wheelSensitivity: 0.3,
@@ -997,6 +999,10 @@
             }
           });
         }
+        // Anything you deliberately pulled in gets named, whatever the mode —
+        // discovering a nameless dot would be pointless.
+        if (newIds.length) markNamed(cy.collection(newIds.map((i2) => cy.getElementById(i2))));
+        markNamed(n0);
         const total = from + batch.length;
         if (all.length > total) {
           showSel(`<strong>${esc(n0.data('label'))}</strong>
@@ -1183,11 +1189,14 @@
     const bar = document.createElement('div');
     bar.className = 'gctl';
     const labelsHidden = localStorage.getItem('lyke.graph.nolabels') === '1';
+    const namesAll = localStorage.getItem('lyke.graph.names') !== 'clicked';
     bar.innerHTML = `
       <button class="gc-btn" data-z="in" title="Zoom in">+</button>
       <button class="gc-btn" data-z="out" title="Zoom out">−</button>
       <button class="gc-btn" data-z="fit" title="Fit the main constellation">fit</button>
-      <label class="gc-tog"><input type="checkbox" id="gc-lab" ${labelsHidden ? '' : 'checked'}> record labels</label>`;
+      <label class="gc-tog"><input type="checkbox" id="gc-lab" ${labelsHidden ? '' : 'checked'}> record labels</label>
+      <label class="gc-tog" title="Show every name at once, or reveal them one at a time as you click">
+        <input type="checkbox" id="gc-names" ${namesAll ? 'checked' : ''}> all names</label>`;
     document.querySelector('.gwrap').appendChild(bar);
     const zoomBy = (f) => cy.animate({ zoom: cy.zoom() * f, center: { eles: cy.$(':selected').length ? cy.$(':selected') : undefined } }, { duration: 180 });
     bar.querySelectorAll('[data-z]').forEach((b) => b.addEventListener('click', () => {
@@ -1207,6 +1216,24 @@
     });
     if (labelsHidden) applyLabelVis(false);
 
+    // Names: all at once, or one at a time as you click. In "clicked" mode a
+    // node is anonymous until you tap it — the constellation reads as shape
+    // and colour, and you name the parts you're actually interested in.
+    let namesClicked = !namesAll;
+    const markNamed = (eles) => eles.addClass('named').removeClass('hidename');
+    const applyNameMode = () => {
+      if (namesClicked) cy.nodes().not('.named').addClass('hidename');
+      else cy.nodes().removeClass('hidename');
+    };
+    document.getElementById('gc-names').addEventListener('change', (e) => {
+      namesClicked = !e.target.checked;
+      localStorage.setItem('lyke.graph.names', namesClicked ? 'clicked' : 'all');
+      // Switching into clicked mode starts from a clean slate.
+      if (namesClicked) cy.nodes().removeClass('named');
+      applyNameMode();
+    });
+    if (namesClicked) applyNameMode();
+
     window.__gpanel = openPanel; // console/debug handles
     window.__gexpand = expandNode;
     window.__gfocus = focusOnNode;
@@ -1223,6 +1250,7 @@
         return;
       }
       lastTap = { id, t: now };
+      markNamed(ev.target);
       focusOnNode(id);
       const strip = document.getElementById('gsel');
       if (!strip) return;
