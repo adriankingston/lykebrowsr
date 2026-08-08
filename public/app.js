@@ -640,6 +640,44 @@
     }));
   }
 
+  // Where the music comes from. Share of each person's country-tagged tracks,
+  // so the two libraries' different sizes don't decide the answer.
+  function cmpCountries(A, B) {
+    const tally = (s) => {
+      const m = new Map();
+      let tot = 0;
+      for (const t of s.d.liked.tracks) {
+        const a = s.d.enr?.artists?.[primaryName(t.artist)];
+        if (!a?.country) continue;
+        m.set(a.country, (m.get(a.country) || 0) + 1);
+        tot += 1;
+      }
+      return { m, tot };
+    };
+    const ca = tally(A);
+    const cb = tally(B);
+    if (!ca.tot || !cb.tot) return '';
+    const NAMES = { US: 'United States', GB: 'United Kingdom', CA: 'Canada', NZ: 'New Zealand',
+      AU: 'Australia', DE: 'Germany', SE: 'Sweden', FR: 'France', IS: 'Iceland', NO: 'Norway',
+      JP: 'Japan', IE: 'Ireland', NL: 'Netherlands', ES: 'Spain', BE: 'Belgium', DK: 'Denmark' };
+    const rows = [...new Set([...ca.m.keys(), ...cb.m.keys()])]
+      .map((k) => ({ k, sa: (ca.m.get(k) || 0) / ca.tot, sb: (cb.m.get(k) || 0) / cb.tot,
+        a: ca.m.get(k) || 0, b: cb.m.get(k) || 0 }))
+      .sort((x, y) => (y.sa + y.sb) - (x.sa + x.sb))
+      .slice(0, 12);
+    const max = Math.max(...rows.map((r) => Math.max(r.sa, r.sb)));
+    return `
+      <h2 class="sect">Where it comes from</h2>
+      <p class="ent-meta">Each artist's country of origin, as a share of that person's
+        country-tagged tracks.</p>
+      <div class="cmp-rows">${rows.map((r) => `
+        <div class="cmp-row">
+          <span class="cmp-half l"><span class="cmp-bar a" style="width:${(r.sa / max * 100).toFixed(1)}%"></span><em>${(r.sa * 100).toFixed(0)}%</em></span>
+          <span class="cmp-name">${esc(NAMES[r.k] || r.k)}</span>
+          <span class="cmp-half r"><span class="cmp-bar b" style="width:${(r.sb / max * 100).toFixed(1)}%"></span><em>${(r.sb * 100).toFixed(0)}%</em></span>
+        </div>`).join('')}</div>`;
+  }
+
   // Depth vs breadth, and who leans hardest on what.
   function cmpContrast(head, c) {
     const { A, B, sharedArtists } = c;
@@ -686,6 +724,7 @@
       </svg>
       <div class="cmp-legend"><span><i class="sw a"></i>Adrian — ${sa.artists} artists, ${sa.onlyOne} of them a single song</span>
         <span><i class="sw b"></i>Sharlene — ${sb.artists} artists, ${sb.onlyOne} of them a single song</span></div>
+      ${cmpCountries(A, B)}
       <h2 class="sect">Entirely his</h2>
       <div class="chips">${onlyMine.map((x) => `<a class="bchip" href="#/search/artist/${encodeURIComponent(x.name)}">${esc(x.name)}<span class="bn">${x.n}</span></a>`).join('')}</div>
       <h2 class="sect">Entirely hers</h2>
