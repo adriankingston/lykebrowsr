@@ -13,8 +13,10 @@
 //      country/area of origin, and membership links (the raw material for
 //      the relationship graph).
 //
-// Output: data/liked-music-enriched.json, written incrementally.
-// Run with:  node resolve-liked.js   (logs to resolve.log)
+// Output: data/<set>-enriched.json, written incrementally.
+// Run with:  node resolve-liked.js                 (Adrian's liked-music)
+//            node resolve-liked.js --set=liked-music-sharlene
+//            …plus --genres / --labels / --covers, which honour --set too.
 
 const fs = require('fs');
 const path = require('path');
@@ -29,8 +31,12 @@ try {
 } catch { /* no .env */ }
 
 const CACHE_DIR = path.join(__dirname, '.cache');
-const OUT = path.join(__dirname, 'data', 'liked-music-enriched.json');
-const LOG = path.join(__dirname, 'resolve.log');
+// Which dataset this run resolves. Everything downstream — checkpoint file,
+// log, cover wall — is namespaced by it, so two libraries never collide.
+const SET = (process.argv.find((a) => a.startsWith('--set=')) || '--set=liked-music').slice(6);
+const SRC = path.join(__dirname, 'data', `${SET}.json`);
+const OUT = path.join(__dirname, 'data', `${SET}-enriched.json`);
+const LOG = path.join(__dirname, `resolve${SET === 'liked-music' ? '' : '-' + SET.replace(/^liked-music-/, '')}.log`);
 const MB = 'https://musicbrainz.org/ws/2/';
 const UA = `lykebrowsr/0.1 (${process.env.MB_CONTACT || 'no-contact-set; local dev'})`;
 fs.mkdirSync(CACHE_DIR, { recursive: true });
@@ -290,7 +296,7 @@ async function resolveLabels() {
 // NOT the final dn*/ia* storage node, whose hostnames rotate and can degrade
 // to 20s transfers when stale.
 async function resolveCovers() {
-  const liked = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'liked-music.json'), 'utf8'));
+  const liked = JSON.parse(fs.readFileSync(SRC, 'utf8'));
   const st = load();
   const counts = new Map();
   for (const t of liked.tracks) {
@@ -342,7 +348,7 @@ async function resolveCovers() {
       else log(`cover ${a.name}: no art on first ${albums.length} albums`);
     } catch (e) { log(`cover ${a.name} failed: ${e.message}`); }
   }
-  fs.writeFileSync(path.join(__dirname, 'data', 'home-covers.json'), JSON.stringify({
+  fs.writeFileSync(path.join(__dirname, 'data', `${SET === 'liked-music' ? 'home' : SET}-covers.json`), JSON.stringify({
     source: 'First-album covers for the top lyked artists (Cover Art Archive)',
     updated: new Date().toISOString(),
     covers,
@@ -354,7 +360,7 @@ async function main() {
   if (process.argv.includes('--genres')) return backfillGenres();
   if (process.argv.includes('--labels')) return resolveLabels();
   if (process.argv.includes('--covers')) return resolveCovers();
-  const liked = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'liked-music.json'), 'utf8'));
+  const liked = JSON.parse(fs.readFileSync(SRC, 'utf8'));
   const st = load(liked);
   // Tracks that have left the playlist leave the dataset; drop their entries
   // so the checkpoint doesn't grow forever.

@@ -133,11 +133,13 @@
     if (form.parentElement !== header) header.appendChild(form);
     // Visual dataset views go full-bleed; everything else keeps the column.
     view.classList.toggle('wide',
-      parts[0] === 'data' && ['timeline', 'bands', 'graph', 'styles'].includes(parts[2]));
+      (parts[0] === 'data' && ['timeline', 'bands', 'graph', 'styles'].includes(parts[2]))
+      || (parts[0] === 'compare' && parts[1] && parts[1] !== 'overview'));
     // Home pins its data/ hint to the bottom of the viewport.
     view.classList.toggle('home', !parts.length);
     if (!parts.length) return renderHome();
     if (parts[0] === 'search') return renderSearch(parts[1], parts.slice(2).join('/'));
+    if (parts[0] === 'compare') return renderCompare(parts[1] || 'overview');
     if (parts[0] === 'data' && parts[1]) return renderDataset(parts[1], parts[2] || 'overview');
     if (RESULT_KEY[parts[0]] && parts[1]) return renderEntity(parts[0], parts[1]);
     renderHome();
@@ -188,7 +190,8 @@
       const hasLiked = sets.some((s) => s.name === 'liked-music');
       // Support files (enrichment, genre graph) aren't destinations — keep
       // the home page pointed at things worth clicking.
-      const rest = sets.filter((s) => !['liked-music', 'liked-music-enriched', 'genre-graph', 'home-covers'].includes(s.name));
+      const rest = sets.filter((s) => !PEOPLE.some((p) => p.set === s.name)
+        && !/-enriched$|-covers$/.test(s.name) && s.name !== 'genre-graph');
       document.getElementById('datasets').innerHTML = `
         ${hasLiked ? `
           <div class="home-panel">
@@ -201,6 +204,10 @@
             <a class="dtab" href="#/data/liked-music/styles">Styles</a>
           </div>
           <div class="home-search"></div>
+          <nav class="home-who">
+            ${PEOPLE.map((p) => `<a href="#/data/${p.set}">${esc(p.who)}</a>`).join('')}
+            <a class="both" href="#/compare">Both ♥</a>
+          </nav>
           </div>` : ''}
         ${rest.length ? `
           <h2 class="sect">Other datasets</h2>
@@ -214,6 +221,475 @@
       // it back on the way out).
       document.querySelector('.home-search')?.appendChild(form);
     } catch { /* datasets are optional */ }
+  }
+
+  // --- Two libraries ---------------------------------------------------------
+  // Comparing Adrian's and Sharlene's likes. Everything here normalises for
+  // size: her library is 1.4× his and holds 3× the artists, so any raw count
+  // would just be measuring who likes more music.
+  const cmpKey = (s) => String(s || '').toLowerCase().normalize('NFD')
+    .replace(/\p{M}/gu, '').replace(/[^a-z0-9]/g, '');
+
+  let cmpCache = null;
+  let cmpCacheAt = 0;
+  let cmpSort = 'common';
+  async function loadBoth() {
+    // Short TTL, not "cache forever": her enriched file is still growing as the
+    // resolver works, so a session-long cache would serve joins that quietly
+    // go stale while you're looking at them.
+    if (cmpCache && Date.now() - cmpCacheAt < 60000) return cmpCache;
+    dsCache.clear();
+    const [a, b] = await Promise.all(PEOPLE.map((p) => loadDataset(p.set)));
+    const sides = [{ ...PEOPLE[0], d: a }, { ...PEOPLE[1], d: b }];
+    // Roll each library up by artist, keyed loosely so "Metz"/"METZ" meet.
+    for (const s of sides) {
+      s.artists = new Map();
+      for (const t of s.d.liked.tracks) {
+        const disp = primaryName(t.artist);
+        const k = cmpKey(disp);
+        if (!k) continue;
+        if (!s.artists.has(k)) s.artists.set(k, { key: k, name: disp, n: 0 });
+        s.artists.get(k).n += 1;
+      }
+      s.tracks = new Map(s.d.liked.tracks.map((t) => [cmpKey(primaryName(t.artist) + t.title), t]));
+      s.total = s.d.liked.tracks.length;
+    }
+    const [A, B] = sides;
+    const sharedArtists = [...A.artists.values()]
+      .filter((x) => B.artists.has(x.key))
+      .map((x) => ({ key: x.key, name: x.name, a: x.n, b: B.artists.get(x.key).n }));
+    const sharedTracks = [...A.tracks.entries()]
+      .filter(([k]) => B.tracks.has(k))
+      .map(([, t]) => t);
+    cmpCache = { A, B, sharedArtists, sharedTracks };
+    cmpCacheAt = Date.now();
+    return cmpCache;
+  }
+
+  function cmpTabs(active) {
+    const tab = (id, label) => `<a class="dtab${active === id ? ' on' : ''}"
+      href="#/compare${id === 'overview' ? '' : '/' + id}">${label}</a>`;
+    return `<nav class="dtabs">${tab('overview', 'Common ground')}${tab('artists', 'Shared artists')}${tab('eras', 'Eras')}${tab('styles', 'Styles')}${tab('contrast', 'Contrast')}${tab('guess', 'Guess who')}</nav>`;
+  }
+
+  // Original release year of every dated track, his above the line and hers
+  // below. Both sides are drawn as a share of that person's own dated tracks,
+  // so the shape is about WHEN they listen, not how much.
+  function cmpEras(head, c) {
+    const { A, B } = c;
+    const yearsOf = (s) => {
+      const m = new Map();
+      let tot = 0;
+      for (const t of s.d.liked.tracks) {
+        const r = resolutionOf(s.d.enr, t);
+        if (!r?.date) continue;
+        const y = Number(r.date.slice(0, 4));
+        if (!(y > 1900 && y < 2100)) continue;
+        m.set(y, (m.get(y) || 0) + 1);
+        tot += 1;
+      }
+      return { m, tot };
+    };
+    const ya = yearsOf(A);
+    const yb = yearsOf(B);
+    if (!ya.tot || !yb.tot) {
+      view.innerHTML = `${head}<p class="loading">Release dates are still resolving.</p>`;
+      return;
+    }
+    const median = (y) => {
+      const arr = [];
+      for (const [yr, n] of y.m) for (let i = 0; i < n; i++) arr.push(yr);
+      arr.sort((x, z) => x - z);
+      return arr[Math.floor(arr.length / 2)];
+    };
+    const y0 = Math.min(...ya.m.keys(), ...yb.m.keys());
+    const y1 = Math.max(...ya.m.keys(), ...yb.m.keys());
+    const W = 1000; const H = 340; const MID = H / 2;
+    const bw = W / (y1 - y0 + 1);
+    const share = (y, yr) => (y.m.get(yr) || 0) / y.tot;
+    const peak = Math.max(...[...Array(y1 - y0 + 1)].map((_, i) =>
+      Math.max(share(ya, y0 + i), share(yb, y0 + i))));
+    const bars = [];
+    for (let yr = y0; yr <= y1; yr++) {
+      const x = (yr - y0) * bw;
+      const ha = (share(ya, yr) / peak) * (MID - 16);
+      const hb = (share(yb, yr) / peak) * (MID - 16);
+      const both = Math.min(ha, hb);
+      if (ha) bars.push(`<rect x="${x.toFixed(1)}" y="${(MID - ha).toFixed(1)}" width="${(bw - 0.6).toFixed(1)}" height="${ha.toFixed(1)}" fill="var(--accent)" opacity=".85"><title>${yr} — Adrian ${(share(ya, yr) * 100).toFixed(1)}%</title></rect>`);
+      if (hb) bars.push(`<rect x="${x.toFixed(1)}" y="${MID}" width="${(bw - 0.6).toFixed(1)}" height="${hb.toFixed(1)}" fill="var(--person)" opacity=".85"><title>${yr} — Sharlene ${(share(yb, yr) * 100).toFixed(1)}%</title></rect>`);
+      // Where both have weight in the same year, mark the agreement.
+      if (both > 1.5) bars.push(`<rect x="${x.toFixed(1)}" y="${(MID - 1.5).toFixed(1)}" width="${(bw - 0.6).toFixed(1)}" height="3" fill="#fff" opacity=".55"/>`);
+    }
+    const decades = [];
+    for (let d = Math.ceil(y0 / 10) * 10; d <= y1; d += 10) {
+      const x = (d - y0) * bw;
+      decades.push(`<line x1="${x.toFixed(1)}" y1="8" x2="${x.toFixed(1)}" y2="${H - 8}" stroke="#2e4a56" stroke-dasharray="3 5"/>
+        <text x="${(x + 4).toFixed(1)}" y="${H - 10}" fill="#91a7b0" font-size="11">${d}s</text>`);
+    }
+    // Labels sit at different heights, and flip to the left of the line near
+    // the right edge, so the two medians never collide.
+    const mark = (y, col, label, ty) => {
+      const x = (median(y) - y0 + 0.5) * bw;
+      const flip = x > W - 120;
+      return `<line x1="${x.toFixed(1)}" y1="10" x2="${x.toFixed(1)}" y2="${H - 20}" stroke="${col}" stroke-width="1.5" opacity=".8"/>
+        <text x="${(x + (flip ? -6 : 6)).toFixed(1)}" y="${ty}" fill="${col}" font-size="12"
+          text-anchor="${flip ? 'end' : 'start'}">${label} ${median(y)}</text>`;
+    };
+    view.innerHTML = `${head}
+      <div class="cmp-stats">
+        <div class="cmp-stat"><b>${median(ya)}</b><span>Adrian's median release year</span></div>
+        <div class="cmp-stat"><b>${median(yb)}</b><span>Sharlene's median release year</span></div>
+        <div class="cmp-stat"><b>${y0}–${y1}</b><span>between you</span></div>
+      </div>
+      <h2 class="sect">When your music was made</h2>
+      <p class="ent-meta">Every track by the year it was <strong>originally released</strong> — his above the line,
+        hers below. Each side is drawn as a share of that person's own dated tracks, so this is about
+        <em>when</em> you listen rather than how much. The pale notch marks a year you both lean on.</p>
+      <div class="cmp-legend"><span><i class="sw a"></i>Adrian — ${ya.tot.toLocaleString()} dated tracks</span>
+        <span><i class="sw b"></i>Sharlene — ${yb.tot.toLocaleString()}</span></div>
+      <svg class="cmp-eras" viewBox="0 0 ${W} ${H}" role="img" aria-label="Release years, both libraries">
+        ${decades.join('')}
+        ${bars.join('')}
+        <line x1="0" y1="${MID}" x2="${W}" y2="${MID}" stroke="#3a5a68"/>
+        ${mark(ya, 'var(--accent)', 'his median', 22)}
+        ${mark(yb, 'var(--person)', 'her median', H - 30)}
+      </svg>`;
+  }
+
+  // Genre by genre, as a share of each library.
+  function cmpStyles(head, c) {
+    const { A, B } = c;
+    const stylesOf = (s) => {
+      const m = new Map();
+      let tot = 0;
+      for (const t of s.d.liked.tracks) {
+        const a = s.d.enr?.artists?.[primaryName(t.artist)];
+        const g = a?.genres?.[0]?.name;
+        if (!g) continue;
+        m.set(g, (m.get(g) || 0) + 1);
+        tot += 1;
+      }
+      return { m, tot };
+    };
+    const sa = stylesOf(A);
+    const sb = stylesOf(B);
+    if (!sa.tot || !sb.tot) {
+      view.innerHTML = `${head}<p class="loading">Styles are still resolving.</p>`;
+      return;
+    }
+    const names = [...new Set([...sa.m.keys(), ...sb.m.keys()])];
+    const rows = names.map((g) => ({
+      name: g,
+      a: sa.m.get(g) || 0,
+      b: sb.m.get(g) || 0,
+      sa: (sa.m.get(g) || 0) / sa.tot,
+      sb: (sb.m.get(g) || 0) / sb.tot,
+    })).map((r) => ({ ...r, weight: r.sa + r.sb }))
+      .sort((x, y) => y.weight - x.weight)
+      .slice(0, 26);
+    const max = Math.max(...rows.map((r) => Math.max(r.sa, r.sb)));
+    const shared = names.filter((g) => sa.m.has(g) && sb.m.has(g)).length;
+    view.innerHTML = `${head}
+      <div class="cmp-stats">
+        <div class="cmp-stat"><b>${shared}</b><span>styles you both have</span></div>
+        <div class="cmp-stat"><b>${sa.m.size} / ${sb.m.size}</b><span>his styles / hers</span></div>
+      </div>
+      <h2 class="sect">Style by style</h2>
+      <p class="ent-meta">Each artist's leading genre, counted per track and shown as a share of that
+        person's library. The middle of this chart is where your tastes actually meet.</p>
+      <div class="cmp-legend"><span><i class="sw a"></i>Adrian</span><span><i class="sw b"></i>Sharlene</span></div>
+      <div class="cmp-rows">${rows.map((r) => `
+        <a class="cmp-row" href="#/search/artist/${encodeURIComponent(r.name)}">
+          <span class="cmp-half l"><span class="cmp-bar a" style="width:${(r.sa / max * 100).toFixed(1)}%"></span><em>${r.a}</em></span>
+          <span class="cmp-name">${esc(r.name)}</span>
+          <span class="cmp-half r"><span class="cmp-bar b" style="width:${(r.sb / max * 100).toFixed(1)}%"></span><em>${r.b}</em></span>
+        </a>`).join('')}</div>`;
+  }
+
+  // Whose is it? 20 rounds of "who liked this" — the only view here that needs
+  // no MusicBrainz data at all, and the one most likely to start an argument.
+  function cmpGuess(head, c) {
+    const { A, B, sharedArtists } = c;
+    const sharedKeys = new Set(sharedArtists.map((x) => x.key));
+    // Only artists with a bit of weight, so a one-off cameo isn't a fair test.
+    const pick = (side, other) => [...side.artists.values()]
+      .filter((x) => x.n >= 3 && !sharedKeys.has(x.key))
+      .map((x) => ({ name: x.name, answer: side.who, n: x.n }));
+    const bothPool = sharedArtists.filter((x) => Math.min(x.a, x.b) >= 3)
+      .map((x) => ({ name: x.name, answer: 'Both', a: x.a, b: x.b }));
+    const pool = [...pick(A, B), ...pick(B, A), ...bothPool];
+    const shuffled = pool.slice().sort(() => Math.random() - 0.5).slice(0, 20);
+    let i = 0; let score = 0;
+    const render = () => {
+      const q = shuffled[i];
+      if (!q) {
+        view.innerHTML = `${head}
+          <div class="guess-card done">
+            <p class="guess-score">${score} / ${shuffled.length}</p>
+            <p class="ent-meta">${score >= 16 ? 'You know each other disturbingly well.'
+              : score >= 11 ? 'Better than a coin toss, which is the main thing.'
+              : 'Room for improvement. Or the shuffle was cruel.'}</p>
+            <button class="dtab" id="guess-again">go again</button>
+          </div>`;
+        document.getElementById('guess-again').addEventListener('click', () => cmpGuess(head, c));
+        return;
+      }
+      view.innerHTML = `${head}
+        <div class="guess-card">
+          <p class="r-sub">${i + 1} of ${shuffled.length} · ${score} right</p>
+          <p class="guess-name">${esc(q.name)}</p>
+          <p class="ent-meta">Whose likes is this artist in?</p>
+          <div class="guess-btns">
+            <button class="dtab" data-ans="Adrian">Adrian</button>
+            <button class="dtab" data-ans="Sharlene">Sharlene</button>
+            <button class="dtab" data-ans="Both">Both</button>
+          </div>
+          <p class="guess-verdict" id="guess-verdict"></p>
+        </div>`;
+      view.querySelectorAll('[data-ans]').forEach((b) => b.addEventListener('click', () => {
+        const right = b.dataset.ans === q.answer;
+        if (right) score += 1;
+        const detail = q.answer === 'Both'
+          ? `Both — Adrian ${q.a}, Sharlene ${q.b}`
+          : `${q.answer} only — ${q.n} track${q.n === 1 ? '' : 's'}`;
+        const v = document.getElementById('guess-verdict');
+        v.className = `guess-verdict ${right ? 'yes' : 'no'}`;
+        v.textContent = `${right ? '✓' : '✗'} ${detail}`;
+        view.querySelectorAll('[data-ans]').forEach((x) => { x.disabled = true; });
+        setTimeout(() => { i += 1; render(); }, 1100);
+      }));
+    };
+    render();
+  }
+
+  async function renderCompare(sub) {
+    loading('Loading both libraries');
+    try {
+      const c = await loadBoth();
+      const head = `
+        <span class="ent-kind">Lyked by</span>
+        <h1 class="ent-title">Adrian &amp; Sharlene</h1>
+        <p class="ent-meta">${c.A.total.toLocaleString()} + ${c.B.total.toLocaleString()} tracks ·
+          ${c.sharedArtists.length} artists and ${c.sharedTracks.length} songs in common</p>
+        ${whoSwitchCompare(sub)}
+        ${cmpTabs(sub)}`;
+      if (sub === 'artists') return cmpArtists(head, c);
+      if (sub === 'eras') return cmpEras(head, c);
+      if (sub === 'styles') return cmpStyles(head, c);
+      if (sub === 'contrast') return cmpContrast(head, c);
+      if (sub === 'guess') return cmpGuess(head, c);
+      return cmpOverview(head, c);
+    } catch (e) {
+      view.innerHTML = `<p class="error">Couldn't load both libraries: ${esc(e.message)}</p>`;
+    }
+  }
+
+  function whoSwitchCompare(sub) {
+    const view2 = sub && sub !== 'overview' ? `/${sub}` : '';
+    return `<nav class="whoswitch" aria-label="Whose library">
+      ${PEOPLE.map((p) => `<a class="who" href="#/data/${p.set}">${esc(p.who)}</a>`).join('')}
+      <a class="who who-both on" href="#/compare${view2}">Both</a>
+    </nav>`;
+  }
+
+  // The songs you have BOTH already liked — a playlist neither of you made.
+  function cmpOverview(head, c) {
+    const { A, B, sharedArtists, sharedTracks } = c;
+    // Overlap is asymmetric and it matters: the same 89 artists are a third of
+    // his list but under a tenth of hers. Quoting one number picks a story.
+    const ovA = (sharedArtists.length / A.artists.size) * 100;
+    const ovB = (sharedArtists.length / B.artists.size) * 100;
+    // How much LISTENING the shared artists account for, each side.
+    const listenA = [...A.artists.values()].filter((x) => sharedArtists.some((s) => s.key === x.key))
+      .reduce((t, x) => t + x.n, 0) / A.total * 100;
+    const listenB = [...B.artists.values()].filter((x) => sharedArtists.some((s) => s.key === x.key))
+      .reduce((t, x) => t + x.n, 0) / B.total * 100;
+    const evenest = [...sharedArtists]
+      .filter((x) => x.a + x.b >= 8)
+      .sort((x, y) => Math.abs(Math.log(x.a / x.b)) - Math.abs(Math.log(y.a / y.b)))
+      .slice(0, 8);
+    view.innerHTML = `${head}
+      <div class="cmp-stats">
+        <div class="cmp-stat"><b>${sharedTracks.length}</b><span>songs you've both liked</span></div>
+        <div class="cmp-stat"><b>${sharedArtists.length}</b><span>artists in common</span></div>
+        <div class="cmp-stat"><b>${ovA.toFixed(0)}% / ${ovB.toFixed(0)}%</b><span>of his artists / of hers</span></div>
+        <div class="cmp-stat"><b>${listenA.toFixed(0)}% / ${listenB.toFixed(0)}%</b><span>of his listening / of hers</span></div>
+      </div>
+      <p class="ent-meta">Overlap is lopsided, so both numbers are shown: the same ${sharedArtists.length} artists
+        are a large slice of one library and a small corner of the other.</p>
+      ${evenest.length ? `
+        <h2 class="sect">Squarely in the middle</h2>
+        <p class="ent-meta">Artists you love about equally — the closest thing to a shared favourite.</p>
+        <div class="chips">${evenest.map((x) => `
+          <a class="bchip" href="#/search/artist/${encodeURIComponent(x.name)}">
+            ${esc(x.name)}<span class="bn">${x.a}·${x.b}</span></a>`).join('')}</div>` : ''}
+      ${sharedPlaylist(sharedTracks)}`;
+    wirePlaylist(sharedTracks);
+  }
+
+  // The shared songs as something you'd actually use on a Friday night:
+  // grouped by artist, timed, and copyable into whatever you both use.
+  function sharedPlaylist(tracks) {
+    let secs = 0;
+    for (const t of tracks) {
+      const p = String(t.length || '').split(':').map(Number);
+      if (p.length === 2) secs += p[0] * 60 + p[1];
+    }
+    const hrs = Math.floor(secs / 3600);
+    const mins = Math.round((secs % 3600) / 60);
+    const groups = new Map();
+    for (const t of tracks) {
+      const k = primaryName(t.artist);
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(t);
+    }
+    const ordered = [...groups.entries()].sort((x, y) => y[1].length - x[1].length || x[0].localeCompare(y[0]));
+    return `
+      <h2 class="sect">Ours <span class="r-sub">${tracks.length} songs · ${hrs}h ${mins}m</span></h2>
+      <p class="ent-meta">Neither of you made this list; you both just happened to like all of it.</p>
+      <div class="pgnav">
+        <button class="dtab" id="cmp-copy">copy as a list</button>
+        <button class="dtab" id="cmp-lucky">surprise us</button>
+        <span class="r-sub" id="cmp-copied"></span>
+      </div>
+      <div class="rows">${ordered.map(([artist, ts]) => `
+        <div class="cmp-group">
+          <div class="cmp-artist">${esc(artist)}${ts.length > 1 ? `<span class="bn">${ts.length}</span>` : ''}</div>
+          ${ts.map((t) => `
+            <div class="row cmp-song">
+              <span class="r-name">${esc(t.title)}</span>${yt(`${t.artist || ''} ${t.title}`.trim())}
+              <span class="r-sub">${esc(t.album || '')}</span>
+              <span class="r-end">${esc(t.length || '')}</span>
+            </div>`).join('')}
+        </div>`).join('')}</div>`;
+  }
+
+  function wirePlaylist(tracks) {
+    const copy = document.getElementById('cmp-copy');
+    const lucky = document.getElementById('cmp-lucky');
+    const said = document.getElementById('cmp-copied');
+    copy?.addEventListener('click', async () => {
+      const text = tracks.map((t) => `${primaryName(t.artist)} — ${t.title}`).join('\n');
+      try {
+        await navigator.clipboard.writeText(text);
+        said.textContent = `${tracks.length} songs copied`;
+      } catch { said.textContent = 'clipboard blocked — select and copy manually'; }
+      setTimeout(() => { said.textContent = ''; }, 4000);
+    });
+    lucky?.addEventListener('click', () => {
+      const t = tracks[Math.floor(Math.random() * tracks.length)];
+      if (t) window.open(SVC().url(`${primaryName(t.artist)} ${t.title}`), '_blank', 'noopener');
+    });
+  }
+
+  // Every shared artist as a diverging bar: his weight left, hers right.
+  function cmpArtists(head, c) {
+    const { A, B, sharedArtists } = c;
+    // Share of each library, not raw counts — 10 tracks means more in a small
+    // library than a large one.
+    const rows = sharedArtists.map((x) => ({
+      ...x,
+      sa: x.a / A.total,
+      sb: x.b / B.total,
+    })).map((x) => ({
+      ...x,
+      tilt: Math.log((x.sa + 1e-6) / (x.sb + 1e-6)),
+      weight: x.sa + x.sb,
+      // Common ground = harmonic mean of the two shares, scaled by how evenly
+      // matched they are, so "both quite a lot" beats "one of us, loads".
+      even: (x.a + x.b >= 6)
+        ? ((2 * x.sa * x.sb) / (x.sa + x.sb)) * (Math.min(x.a, x.b) / Math.max(x.a, x.b))
+        : -1,
+    }));
+    const SORTS = {
+      common: { label: 'Common ground', fn: (x, y) => y.even - x.even,
+        note: 'Artists you both give real time to, and in similar measure.' },
+      his: { label: "Adrian's corner", fn: (x, y) => y.tilt - x.tilt,
+        note: 'Furthest towards him — but she still likes them, or they would not be on this page.' },
+      hers: { label: "Sharlene's corner", fn: (x, y) => x.tilt - y.tilt,
+        note: 'Furthest towards her.' },
+      weight: { label: 'Biggest overall', fn: (x, y) => y.weight - x.weight,
+        note: 'Simply the artists that take up the most room across both libraries.' },
+    };
+    const mode = cmpSort in SORTS ? cmpSort : 'common';
+    rows.sort(SORTS[mode].fn);
+    const max = Math.max(...rows.map((r) => Math.max(r.sa, r.sb)));
+    const bar = (r) => {
+      const wa = (r.sa / max) * 100;
+      const wb = (r.sb / max) * 100;
+      return `<a class="cmp-row" href="#/search/artist/${encodeURIComponent(r.name)}">
+        <span class="cmp-half l"><span class="cmp-bar a" style="width:${wa.toFixed(1)}%"></span><em>${r.a}</em></span>
+        <span class="cmp-name">${esc(r.name)}</span>
+        <span class="cmp-half r"><span class="cmp-bar b" style="width:${wb.toFixed(1)}%"></span><em>${r.b}</em></span>
+      </a>`;
+    };
+    view.innerHTML = `${head}
+      <h2 class="sect">${rows.length} artists you both like</h2>
+      <div class="pgnav"><span class="r-sub">sort</span>
+        ${Object.entries(SORTS).map(([k, s]) =>
+          `<button class="dtab${k === mode ? ' on' : ''}" data-srt="${k}">${s.label}</button>`).join('')}
+      </div>
+      <p class="ent-meta">${SORTS[mode].note} Bars are each artist's
+        <strong>share of that person's library</strong>, so this isn't just measuring who likes more music.</p>
+      <div class="cmp-legend"><span><i class="sw a"></i>Adrian</span><span><i class="sw b"></i>Sharlene</span></div>
+      <div class="cmp-rows">${rows.map(bar).join('')}</div>`;
+    view.querySelectorAll('[data-srt]').forEach((b) => b.addEventListener('click', () => {
+      cmpSort = b.dataset.srt;
+      cmpArtists(head, c);
+      window.scrollTo(0, 0);
+    }));
+  }
+
+  // Depth vs breadth, and who leans hardest on what.
+  function cmpContrast(head, c) {
+    const { A, B, sharedArtists } = c;
+    const shared = new Set(sharedArtists.map((x) => x.key));
+    const stat = (s) => {
+      const counts = [...s.artists.values()].map((x) => x.n).sort((x, y) => y - x);
+      const top10 = counts.slice(0, 10).reduce((t, n) => t + n, 0);
+      return {
+        tracks: s.total, artists: counts.length,
+        per: s.total / counts.length,
+        top10pc: (top10 / s.total) * 100,
+        onlyOne: counts.filter((n) => n === 1).length,
+      };
+    };
+    const sa = stat(A);
+    const sb = stat(B);
+    // Concentration curve: what share of the library sits in the top N% of
+    // artists. A straight diagonal = perfectly even; a steep curve = obsessive.
+    const curve = (s) => {
+      const counts = [...s.artists.values()].map((x) => x.n).sort((x, y) => y - x);
+      const pts = [];
+      let acc = 0;
+      counts.forEach((n, i) => { acc += n; pts.push([(i + 1) / counts.length, acc / s.total]); });
+      return pts;
+    };
+    const W = 460; const H = 300;
+    const pathOf = (pts) => pts.map((p, i) => `${i ? 'L' : 'M'}${(p[0] * W).toFixed(1)} ${(H - p[1] * H).toFixed(1)}`).join('');
+    const onlyMine = [...A.artists.values()].filter((x) => !shared.has(x.key)).sort((x, y) => y.n - x.n).slice(0, 12);
+    const onlyHers = [...B.artists.values()].filter((x) => !shared.has(x.key)).sort((x, y) => y.n - x.n).slice(0, 12);
+    view.innerHTML = `${head}
+      <div class="cmp-stats">
+        <div class="cmp-stat"><b>${sa.per.toFixed(1)}</b><span>Adrian's tracks per artist</span></div>
+        <div class="cmp-stat"><b>${sb.per.toFixed(1)}</b><span>Sharlene's tracks per artist</span></div>
+        <div class="cmp-stat"><b>${sa.top10pc.toFixed(0)}% / ${sb.top10pc.toFixed(0)}%</b><span>of each library in its top 10 artists</span></div>
+      </div>
+      <h2 class="sect">Deep vs broad</h2>
+      <p class="ent-meta">Artists ranked by how much of the library they account for, biggest first.
+        A straight line would mean every artist gets equal play; the steeper the climb, the more the
+        library leans on a favourite few.</p>
+      <svg class="cmp-curve" viewBox="0 0 ${W} ${H}" role="img" aria-label="Concentration of each library">
+        <line x1="0" y1="${H}" x2="${W}" y2="0" stroke="#2e4a56" stroke-dasharray="4 4"/>
+        <path d="${pathOf(curve(A))}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>
+        <path d="${pathOf(curve(B))}" fill="none" stroke="var(--person)" stroke-width="2.5"/>
+      </svg>
+      <div class="cmp-legend"><span><i class="sw a"></i>Adrian — ${sa.artists} artists, ${sa.onlyOne} of them a single song</span>
+        <span><i class="sw b"></i>Sharlene — ${sb.artists} artists, ${sb.onlyOne} of them a single song</span></div>
+      <h2 class="sect">Entirely his</h2>
+      <div class="chips">${onlyMine.map((x) => `<a class="bchip" href="#/search/artist/${encodeURIComponent(x.name)}">${esc(x.name)}<span class="bn">${x.n}</span></a>`).join('')}</div>
+      <h2 class="sect">Entirely hers</h2>
+      <div class="chips">${onlyHers.map((x) => `<a class="bchip" href="#/search/artist/${encodeURIComponent(x.name)}">${esc(x.name)}<span class="bn">${x.n}</span></a>`).join('')}</div>`;
   }
 
   // --- Search ----------------------------------------------------------------
@@ -340,6 +816,25 @@
     return { artists: [...byId.values()], byId };
   }
 
+  // Two libraries, one app. The route already carries the dataset, so switching
+  // person is just swapping the set and keeping the view — which means every
+  // link stays shareable (Adrian sends these to Sharlene) rather than depending
+  // on a setting stashed in localStorage.
+  const PEOPLE = [
+    { set: 'liked-music', who: 'Adrian' },
+    { set: 'liked-music-sharlene', who: 'Sharlene' },
+  ];
+  const whoOf = (set) => PEOPLE.find((p) => p.set === set)?.who || set;
+  function whoSwitch(name, sub) {
+    if (!PEOPLE.some((p) => p.set === name)) return '';
+    const view = sub && sub !== 'overview' ? `/${sub}` : '';
+    return `<nav class="whoswitch" aria-label="Whose library">
+      ${PEOPLE.map((p) => `<a class="who${p.set === name ? ' on' : ''}"
+        href="#/data/${p.set}${view}">${esc(p.who)}</a>`).join('')}
+      <a class="who who-both" href="#/compare${view}">Both</a>
+    </nav>`;
+  }
+
   function dsTabs(name, active, enr) {
     const tab = (id, label) => `<a class="dtab${active === id ? ' on' : ''}"
       href="#/data/${esc(name)}${id === 'overview' ? '' : '/' + id}">${label}</a>`;
@@ -360,10 +855,12 @@
           <pre class="raw">${esc(JSON.stringify(d.liked, null, 2)).slice(0, 20000)}</pre>`;
         return;
       }
+      const person = PEOPLE.some((p) => p.set === name);
       const head = `
-        <span class="ent-kind">Dataset</span>
-        <h1 class="ent-title">${esc(name)}</h1>
+        <span class="ent-kind">${person ? 'Lyked by' : 'Dataset'}</span>
+        <h1 class="ent-title">${esc(person ? whoOf(name) : name)}</h1>
         <p class="ent-meta">${esc(d.liked.source || '')}${d.liked.extracted ? ` · extracted ${esc(d.liked.extracted.slice(0, 10))}` : ''}</p>
+        ${whoSwitch(name, sub)}
         ${dsTabs(name, sub, d.enr)}`;
       if (sub === 'timeline') return viewTimeline(head, d);
       if (sub === 'bands') return viewBands(head, d);
@@ -1608,20 +2105,42 @@
       ], en);
     }).catch(() => {});
 
-    // If this artist is in the liked library, show those songs right here.
-    loadDataset('liked-music').then(({ liked, enr }) => {
+    // Whose library is this artist in? Both are checked, so the comparison
+    // surfaces during ordinary browsing rather than only on the compare pages.
+    // Names are matched loosely until a side has resolved MBIDs for them.
+    Promise.all(PEOPLE.map((p) => loadDataset(p.set).catch(() => null))).then((sets) => {
       const box = document.getElementById('lyked');
-      if (!box || !enr) return;
-      const mine = liked.tracks.filter((t) => enr.artists?.[primaryName(t.artist)]?.id === id);
-      if (!mine.length) return;
-      const info = Object.values(enr.artists || {}).find((x) => x.id === id);
+      if (!box) return;
+      const sides = sets.map((s, i) => {
+        if (!s?.enr) return null;
+        const { liked, enr } = s;
+        const byId = Object.values(enr.artists || {}).find((x) => x.id === id);
+        // Fall back to the MusicBrainz name while a library is still resolving —
+        // otherwise a half-resolved side looks like it simply doesn't have them.
+        const wanted = cmpKey(byId?.mbName || a.name);
+        const tracks = liked.tracks.filter((t) => {
+          const ar = enr.artists?.[primaryName(t.artist)];
+          if (ar?.id) return ar.id === id;
+          return cmpKey(primaryName(t.artist)) === wanted;
+        });
+        return tracks.length ? { ...PEOPLE[i], liked, enr, tracks, info: byId } : null;
+      }).filter(Boolean);
+      if (!sides.length) return;
+
+      const both = sides.length === 2;
+      const info = sides.find((s) => (s.info?.labels || []).length)?.info;
       const labelsLine = (info?.labels || []).length
         ? `<p class="ent-meta">on ${info.labels.slice(0, 3).map((l) =>
             `<a href="#/label/${l.id}">${esc(l.name)}</a>`).join(', ')}</p>` : '';
-      box.innerHTML = `<h2 class="sect">Lyked tracks (${mine.length})</h2>${labelsLine}
-        <table class="tracks">${mine.map((t) => {
-          const rec = resolutionOf(enr, t)?.recordingId;
-          const date = resolutionOf(enr, t)?.date;
+      const heading = both
+        ? `<h2 class="sect">Lyked by both <span class="r-sub">${sides.map((s) => `${esc(s.who)} ${s.tracks.length}`).join(' · ')}</span></h2>`
+        : `<h2 class="sect">Lyked by ${esc(sides[0].who)} <span class="r-sub">${sides[0].tracks.length} track${sides[0].tracks.length === 1 ? '' : 's'}</span></h2>`;
+      const table = (s) => `
+        <div class="lyked-side">
+        ${both ? `<h3 class="cmp-sub">${esc(s.who)} — ${s.tracks.length}</h3>` : ''}
+        <table class="tracks">${s.tracks.map((t) => {
+          const rec = resolutionOf(s.enr, t)?.recordingId;
+          const date = resolutionOf(s.enr, t)?.date;
           return `<tr>
             <td class="n">${esc(t.n)}</td>
             <td>${rec ? `<a href="#/recording/${rec}">${esc(t.title)}</a>` : esc(t.title)}${yt(`${t.artist} ${t.title}`)}</td>
@@ -1629,7 +2148,9 @@
             <td class="r-sub">${esc(date ? date.slice(0, 4) : '')}</td>
             <td class="len">${esc(t.length || '')}</td>
           </tr>`;
-        }).join('')}</table>`;
+        }).join('')}</table></div>`;
+      box.innerHTML = `${heading}${labelsLine}
+        <div class="lyked-sides${both ? ' two' : ''}">${sides.map(table).join('')}</div>`;
     }).catch(() => { /* no dataset — catalogue-only install */ });
 
     api(`/api/browse?type=release-group&artist=${id}&limit=100`).then((d) => {
