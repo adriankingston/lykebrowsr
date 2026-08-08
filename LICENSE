@@ -62,6 +62,17 @@ Zen Dots  (public/fonts/zendots-latin.woff2,
   Licensed under the SIL Open Font License, Version 1.1.
   https://fonts.google.com/specimen/Zen+Dots
 
+Very Metal Noise Pollution V2.0  (public/fonts/verymetal.ttf)
+  The wordmark, navigation and section headings are set in Very Metal Noise
+  Pollution V2.0. It remains lowercase in the stack behind Zen Dots, which
+  covers the punctuation this face lacks.
+  *** NOT COVERED BY THE MIT LICENCE ABOVE. *** The font's embedded licence
+  reads "You may not use this font for commercial purposes." It is included
+  here on that basis — lykebrowsr is a personal, non-commercial project.
+  Anyone reusing this repository commercially must remove this file and the
+  matching @font-face rule in public/style.css.
+  http://www.high-logic.com/fontcreator/fontlicense.html
+
 
 ================================================================================
 DATA RETRIEVED AT RUNTIME
