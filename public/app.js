@@ -269,7 +269,141 @@
   function cmpTabs(active) {
     const tab = (id, label) => `<a class="dtab${active === id ? ' on' : ''}"
       href="#/compare${id === 'overview' ? '' : '/' + id}">${label}</a>`;
-    return `<nav class="dtabs">${tab('overview', 'Common ground')}${tab('artists', 'Shared artists')}${tab('contrast', 'Contrast')}${tab('guess', 'Guess who')}</nav>`;
+    return `<nav class="dtabs">${tab('overview', 'Common ground')}${tab('artists', 'Shared artists')}${tab('eras', 'Eras')}${tab('styles', 'Styles')}${tab('contrast', 'Contrast')}${tab('guess', 'Guess who')}</nav>`;
+  }
+
+  // Original release year of every dated track, his above the line and hers
+  // below. Both sides are drawn as a share of that person's own dated tracks,
+  // so the shape is about WHEN they listen, not how much.
+  function cmpEras(head, c) {
+    const { A, B } = c;
+    const yearsOf = (s) => {
+      const m = new Map();
+      let tot = 0;
+      for (const t of s.d.liked.tracks) {
+        const r = resolutionOf(s.d.enr, t);
+        if (!r?.date) continue;
+        const y = Number(r.date.slice(0, 4));
+        if (!(y > 1900 && y < 2100)) continue;
+        m.set(y, (m.get(y) || 0) + 1);
+        tot += 1;
+      }
+      return { m, tot };
+    };
+    const ya = yearsOf(A);
+    const yb = yearsOf(B);
+    if (!ya.tot || !yb.tot) {
+      view.innerHTML = `${head}<p class="loading">Release dates are still resolving.</p>`;
+      return;
+    }
+    const median = (y) => {
+      const arr = [];
+      for (const [yr, n] of y.m) for (let i = 0; i < n; i++) arr.push(yr);
+      arr.sort((x, z) => x - z);
+      return arr[Math.floor(arr.length / 2)];
+    };
+    const y0 = Math.min(...ya.m.keys(), ...yb.m.keys());
+    const y1 = Math.max(...ya.m.keys(), ...yb.m.keys());
+    const W = 1000; const H = 340; const MID = H / 2;
+    const bw = W / (y1 - y0 + 1);
+    const share = (y, yr) => (y.m.get(yr) || 0) / y.tot;
+    const peak = Math.max(...[...Array(y1 - y0 + 1)].map((_, i) =>
+      Math.max(share(ya, y0 + i), share(yb, y0 + i))));
+    const bars = [];
+    for (let yr = y0; yr <= y1; yr++) {
+      const x = (yr - y0) * bw;
+      const ha = (share(ya, yr) / peak) * (MID - 16);
+      const hb = (share(yb, yr) / peak) * (MID - 16);
+      const both = Math.min(ha, hb);
+      if (ha) bars.push(`<rect x="${x.toFixed(1)}" y="${(MID - ha).toFixed(1)}" width="${(bw - 0.6).toFixed(1)}" height="${ha.toFixed(1)}" fill="var(--accent)" opacity=".85"><title>${yr} — Adrian ${(share(ya, yr) * 100).toFixed(1)}%</title></rect>`);
+      if (hb) bars.push(`<rect x="${x.toFixed(1)}" y="${MID}" width="${(bw - 0.6).toFixed(1)}" height="${hb.toFixed(1)}" fill="var(--person)" opacity=".85"><title>${yr} — Sharlene ${(share(yb, yr) * 100).toFixed(1)}%</title></rect>`);
+      // Where both have weight in the same year, mark the agreement.
+      if (both > 1.5) bars.push(`<rect x="${x.toFixed(1)}" y="${(MID - 1.5).toFixed(1)}" width="${(bw - 0.6).toFixed(1)}" height="3" fill="#fff" opacity=".55"/>`);
+    }
+    const decades = [];
+    for (let d = Math.ceil(y0 / 10) * 10; d <= y1; d += 10) {
+      const x = (d - y0) * bw;
+      decades.push(`<line x1="${x.toFixed(1)}" y1="8" x2="${x.toFixed(1)}" y2="${H - 8}" stroke="#2e4a56" stroke-dasharray="3 5"/>
+        <text x="${(x + 4).toFixed(1)}" y="${H - 10}" fill="#91a7b0" font-size="11">${d}s</text>`);
+    }
+    // Labels sit at different heights, and flip to the left of the line near
+    // the right edge, so the two medians never collide.
+    const mark = (y, col, label, ty) => {
+      const x = (median(y) - y0 + 0.5) * bw;
+      const flip = x > W - 120;
+      return `<line x1="${x.toFixed(1)}" y1="10" x2="${x.toFixed(1)}" y2="${H - 20}" stroke="${col}" stroke-width="1.5" opacity=".8"/>
+        <text x="${(x + (flip ? -6 : 6)).toFixed(1)}" y="${ty}" fill="${col}" font-size="12"
+          text-anchor="${flip ? 'end' : 'start'}">${label} ${median(y)}</text>`;
+    };
+    view.innerHTML = `${head}
+      <div class="cmp-stats">
+        <div class="cmp-stat"><b>${median(ya)}</b><span>Adrian's median release year</span></div>
+        <div class="cmp-stat"><b>${median(yb)}</b><span>Sharlene's median release year</span></div>
+        <div class="cmp-stat"><b>${y0}–${y1}</b><span>between you</span></div>
+      </div>
+      <h2 class="sect">When your music was made</h2>
+      <p class="ent-meta">Every track by the year it was <strong>originally released</strong> — his above the line,
+        hers below. Each side is drawn as a share of that person's own dated tracks, so this is about
+        <em>when</em> you listen rather than how much. The pale notch marks a year you both lean on.</p>
+      <div class="cmp-legend"><span><i class="sw a"></i>Adrian — ${ya.tot.toLocaleString()} dated tracks</span>
+        <span><i class="sw b"></i>Sharlene — ${yb.tot.toLocaleString()}</span></div>
+      <svg class="cmp-eras" viewBox="0 0 ${W} ${H}" role="img" aria-label="Release years, both libraries">
+        ${decades.join('')}
+        ${bars.join('')}
+        <line x1="0" y1="${MID}" x2="${W}" y2="${MID}" stroke="#3a5a68"/>
+        ${mark(ya, 'var(--accent)', 'his median', 22)}
+        ${mark(yb, 'var(--person)', 'her median', H - 30)}
+      </svg>`;
+  }
+
+  // Genre by genre, as a share of each library.
+  function cmpStyles(head, c) {
+    const { A, B } = c;
+    const stylesOf = (s) => {
+      const m = new Map();
+      let tot = 0;
+      for (const t of s.d.liked.tracks) {
+        const a = s.d.enr?.artists?.[primaryName(t.artist)];
+        const g = a?.genres?.[0]?.name;
+        if (!g) continue;
+        m.set(g, (m.get(g) || 0) + 1);
+        tot += 1;
+      }
+      return { m, tot };
+    };
+    const sa = stylesOf(A);
+    const sb = stylesOf(B);
+    if (!sa.tot || !sb.tot) {
+      view.innerHTML = `${head}<p class="loading">Styles are still resolving.</p>`;
+      return;
+    }
+    const names = [...new Set([...sa.m.keys(), ...sb.m.keys()])];
+    const rows = names.map((g) => ({
+      name: g,
+      a: sa.m.get(g) || 0,
+      b: sb.m.get(g) || 0,
+      sa: (sa.m.get(g) || 0) / sa.tot,
+      sb: (sb.m.get(g) || 0) / sb.tot,
+    })).map((r) => ({ ...r, weight: r.sa + r.sb }))
+      .sort((x, y) => y.weight - x.weight)
+      .slice(0, 26);
+    const max = Math.max(...rows.map((r) => Math.max(r.sa, r.sb)));
+    const shared = names.filter((g) => sa.m.has(g) && sb.m.has(g)).length;
+    view.innerHTML = `${head}
+      <div class="cmp-stats">
+        <div class="cmp-stat"><b>${shared}</b><span>styles you both have</span></div>
+        <div class="cmp-stat"><b>${sa.m.size} / ${sb.m.size}</b><span>his styles / hers</span></div>
+      </div>
+      <h2 class="sect">Style by style</h2>
+      <p class="ent-meta">Each artist's leading genre, counted per track and shown as a share of that
+        person's library. The middle of this chart is where your tastes actually meet.</p>
+      <div class="cmp-legend"><span><i class="sw a"></i>Adrian</span><span><i class="sw b"></i>Sharlene</span></div>
+      <div class="cmp-rows">${rows.map((r) => `
+        <a class="cmp-row" href="#/search/artist/${encodeURIComponent(r.name)}">
+          <span class="cmp-half l"><span class="cmp-bar a" style="width:${(r.sa / max * 100).toFixed(1)}%"></span><em>${r.a}</em></span>
+          <span class="cmp-name">${esc(r.name)}</span>
+          <span class="cmp-half r"><span class="cmp-bar b" style="width:${(r.sb / max * 100).toFixed(1)}%"></span><em>${r.b}</em></span>
+        </a>`).join('')}</div>`;
   }
 
   // Whose is it? 20 rounds of "who liked this" — the only view here that needs
@@ -340,6 +474,8 @@
         ${whoSwitchCompare(sub)}
         ${cmpTabs(sub)}`;
       if (sub === 'artists') return cmpArtists(head, c);
+      if (sub === 'eras') return cmpEras(head, c);
+      if (sub === 'styles') return cmpStyles(head, c);
       if (sub === 'contrast') return cmpContrast(head, c);
       if (sub === 'guess') return cmpGuess(head, c);
       return cmpOverview(head, c);

@@ -702,3 +702,4 @@ pre.raw {
 .guess-verdict.yes { color: var(--accent); }
 .guess-verdict.no { color: var(--warn); }
 .guess-score { font-family: Cal Sans, Quantico, sans-serif; font-size: 54px; color: #fff; margin: 0; }
+.cmp-eras { width: 100%; height: auto; display: block; margin: 4px 0 10px; }
