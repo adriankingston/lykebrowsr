@@ -133,11 +133,13 @@
     if (form.parentElement !== header) header.appendChild(form);
     // Visual dataset views go full-bleed; everything else keeps the column.
     view.classList.toggle('wide',
-      parts[0] === 'data' && ['timeline', 'bands', 'graph', 'styles'].includes(parts[2]));
+      (parts[0] === 'data' && ['timeline', 'bands', 'graph', 'styles'].includes(parts[2]))
+      || (parts[0] === 'compare' && parts[1] && parts[1] !== 'overview'));
     // Home pins its data/ hint to the bottom of the viewport.
     view.classList.toggle('home', !parts.length);
     if (!parts.length) return renderHome();
     if (parts[0] === 'search') return renderSearch(parts[1], parts.slice(2).join('/'));
+    if (parts[0] === 'compare') return renderCompare(parts[1] || 'overview');
     if (parts[0] === 'data' && parts[1]) return renderDataset(parts[1], parts[2] || 'overview');
     if (RESULT_KEY[parts[0]] && parts[1]) return renderEntity(parts[0], parts[1]);
     renderHome();
@@ -188,7 +190,8 @@
       const hasLiked = sets.some((s) => s.name === 'liked-music');
       // Support files (enrichment, genre graph) aren't destinations — keep
       // the home page pointed at things worth clicking.
-      const rest = sets.filter((s) => !['liked-music', 'liked-music-enriched', 'genre-graph', 'home-covers'].includes(s.name));
+      const rest = sets.filter((s) => !PEOPLE.some((p) => p.set === s.name)
+        && !/-enriched$|-covers$/.test(s.name) && s.name !== 'genre-graph');
       document.getElementById('datasets').innerHTML = `
         ${hasLiked ? `
           <div class="home-panel">
@@ -201,6 +204,10 @@
             <a class="dtab" href="#/data/liked-music/styles">Styles</a>
           </div>
           <div class="home-search"></div>
+          <nav class="home-who">
+            ${PEOPLE.map((p) => `<a href="#/data/${p.set}">${esc(p.who)}</a>`).join('')}
+            <a class="both" href="#/compare">Both ♥</a>
+          </nav>
           </div>` : ''}
         ${rest.length ? `
           <h2 class="sect">Other datasets</h2>
@@ -214,6 +221,192 @@
       // it back on the way out).
       document.querySelector('.home-search')?.appendChild(form);
     } catch { /* datasets are optional */ }
+  }
+
+  // --- Two libraries ---------------------------------------------------------
+  // Comparing Adrian's and Sharlene's likes. Everything here normalises for
+  // size: her library is 1.4× his and holds 3× the artists, so any raw count
+  // would just be measuring who likes more music.
+  const cmpKey = (s) => String(s || '').toLowerCase().normalize('NFD')
+    .replace(/\p{M}/gu, '').replace(/[^a-z0-9]/g, '');
+
+  let cmpCache = null;
+  async function loadBoth() {
+    if (cmpCache) return cmpCache;
+    const [a, b] = await Promise.all(PEOPLE.map((p) => loadDataset(p.set)));
+    const sides = [{ ...PEOPLE[0], d: a }, { ...PEOPLE[1], d: b }];
+    // Roll each library up by artist, keyed loosely so "Metz"/"METZ" meet.
+    for (const s of sides) {
+      s.artists = new Map();
+      for (const t of s.d.liked.tracks) {
+        const disp = primaryName(t.artist);
+        const k = cmpKey(disp);
+        if (!k) continue;
+        if (!s.artists.has(k)) s.artists.set(k, { key: k, name: disp, n: 0 });
+        s.artists.get(k).n += 1;
+      }
+      s.tracks = new Map(s.d.liked.tracks.map((t) => [cmpKey(primaryName(t.artist) + t.title), t]));
+      s.total = s.d.liked.tracks.length;
+    }
+    const [A, B] = sides;
+    const sharedArtists = [...A.artists.values()]
+      .filter((x) => B.artists.has(x.key))
+      .map((x) => ({ key: x.key, name: x.name, a: x.n, b: B.artists.get(x.key).n }));
+    const sharedTracks = [...A.tracks.entries()]
+      .filter(([k]) => B.tracks.has(k))
+      .map(([, t]) => t);
+    cmpCache = { A, B, sharedArtists, sharedTracks };
+    return cmpCache;
+  }
+
+  function cmpTabs(active) {
+    const tab = (id, label) => `<a class="dtab${active === id ? ' on' : ''}"
+      href="#/compare${id === 'overview' ? '' : '/' + id}">${label}</a>`;
+    return `<nav class="dtabs">${tab('overview', 'Common ground')}${tab('artists', 'Shared artists')}${tab('contrast', 'Contrast')}</nav>`;
+  }
+
+  async function renderCompare(sub) {
+    loading('Loading both libraries');
+    try {
+      const c = await loadBoth();
+      const head = `
+        <span class="ent-kind">Lyked by</span>
+        <h1 class="ent-title">Adrian &amp; Sharlene</h1>
+        <p class="ent-meta">${c.A.total.toLocaleString()} + ${c.B.total.toLocaleString()} tracks ·
+          ${c.sharedArtists.length} artists and ${c.sharedTracks.length} songs in common</p>
+        ${whoSwitchCompare(sub)}
+        ${cmpTabs(sub)}`;
+      if (sub === 'artists') return cmpArtists(head, c);
+      if (sub === 'contrast') return cmpContrast(head, c);
+      return cmpOverview(head, c);
+    } catch (e) {
+      view.innerHTML = `<p class="error">Couldn't load both libraries: ${esc(e.message)}</p>`;
+    }
+  }
+
+  function whoSwitchCompare(sub) {
+    const view2 = sub && sub !== 'overview' ? `/${sub}` : '';
+    return `<nav class="whoswitch" aria-label="Whose library">
+      ${PEOPLE.map((p) => `<a class="who" href="#/data/${p.set}">${esc(p.who)}</a>`).join('')}
+      <a class="who who-both on" href="#/compare${view2}">Both</a>
+    </nav>`;
+  }
+
+  // The songs you have BOTH already liked — a playlist neither of you made.
+  function cmpOverview(head, c) {
+    const { A, B, sharedArtists, sharedTracks } = c;
+    // Overlap as a share of the smaller library, so her extra 600 tracks don't
+    // flatter or penalise the number.
+    const artistOverlap = (sharedArtists.length / Math.min(A.artists.size, B.artists.size) * 100);
+    const evenest = [...sharedArtists]
+      .filter((x) => x.a + x.b >= 8)
+      .sort((x, y) => Math.abs(Math.log(x.a / x.b)) - Math.abs(Math.log(y.a / y.b)))
+      .slice(0, 8);
+    view.innerHTML = `${head}
+      <div class="cmp-stats">
+        <div class="cmp-stat"><b>${sharedTracks.length}</b><span>songs you've both liked</span></div>
+        <div class="cmp-stat"><b>${sharedArtists.length}</b><span>artists in common</span></div>
+        <div class="cmp-stat"><b>${artistOverlap.toFixed(0)}%</b><span>of the smaller library</span></div>
+      </div>
+      ${evenest.length ? `
+        <h2 class="sect">Squarely in the middle</h2>
+        <p class="ent-meta">Artists you love about equally — the closest thing to a shared favourite.</p>
+        <div class="chips">${evenest.map((x) => `
+          <a class="bchip" href="#/search/artist/${encodeURIComponent(x.name)}">
+            ${esc(x.name)}<span class="bn">${x.a}·${x.b}</span></a>`).join('')}</div>` : ''}
+      <h2 class="sect">The shared playlist <span class="r-sub">${sharedTracks.length} songs</span></h2>
+      <p class="ent-meta">Neither of you made this list; you both just happened to like all of it.</p>
+      <table class="tracks">
+        <tr><th></th><th>Title</th><th>Artist</th><th>Album</th></tr>
+        ${sharedTracks.map((t, i) => `
+          <tr>
+            <td class="n">${i + 1}</td>
+            <td>${esc(t.title)}${yt(`${t.artist || ''} ${t.title}`.trim())}</td>
+            <td>${esc(t.artist || '')}</td>
+            <td class="r-sub">${esc(t.album || '')}</td>
+          </tr>`).join('')}
+      </table>`;
+  }
+
+  // Every shared artist as a diverging bar: his weight left, hers right.
+  function cmpArtists(head, c) {
+    const { A, B, sharedArtists } = c;
+    // Share of each library, not raw counts — 10 tracks means more in a small
+    // library than a large one.
+    const rows = sharedArtists.map((x) => ({
+      ...x,
+      sa: x.a / A.total,
+      sb: x.b / B.total,
+    })).map((x) => ({ ...x, tilt: Math.log((x.sa + 1e-6) / (x.sb + 1e-6)), weight: x.sa + x.sb }));
+    rows.sort((x, y) => y.weight - x.weight);
+    const max = Math.max(...rows.map((r) => Math.max(r.sa, r.sb)));
+    const bar = (r) => {
+      const wa = (r.sa / max) * 100;
+      const wb = (r.sb / max) * 100;
+      return `<a class="cmp-row" href="#/search/artist/${encodeURIComponent(r.name)}">
+        <span class="cmp-half l"><span class="cmp-bar a" style="width:${wa.toFixed(1)}%"></span><em>${r.a}</em></span>
+        <span class="cmp-name">${esc(r.name)}</span>
+        <span class="cmp-half r"><span class="cmp-bar b" style="width:${wb.toFixed(1)}%"></span><em>${r.b}</em></span>
+      </a>`;
+    };
+    view.innerHTML = `${head}
+      <h2 class="sect">${rows.length} artists you both like</h2>
+      <p class="ent-meta">Bars are each artist's <strong>share of that person's library</strong>, so the
+        comparison isn't just measuring who likes more music. Sorted by combined weight.</p>
+      <div class="cmp-legend"><span><i class="sw a"></i>Adrian</span><span><i class="sw b"></i>Sharlene</span></div>
+      <div class="cmp-rows">${rows.map(bar).join('')}</div>`;
+  }
+
+  // Depth vs breadth, and who leans hardest on what.
+  function cmpContrast(head, c) {
+    const { A, B, sharedArtists } = c;
+    const shared = new Set(sharedArtists.map((x) => x.key));
+    const stat = (s) => {
+      const counts = [...s.artists.values()].map((x) => x.n).sort((x, y) => y - x);
+      const top10 = counts.slice(0, 10).reduce((t, n) => t + n, 0);
+      return {
+        tracks: s.total, artists: counts.length,
+        per: s.total / counts.length,
+        top10pc: (top10 / s.total) * 100,
+        onlyOne: counts.filter((n) => n === 1).length,
+      };
+    };
+    const sa = stat(A);
+    const sb = stat(B);
+    // Concentration curve: what share of the library sits in the top N% of
+    // artists. A straight diagonal = perfectly even; a steep curve = obsessive.
+    const curve = (s) => {
+      const counts = [...s.artists.values()].map((x) => x.n).sort((x, y) => y - x);
+      const pts = [];
+      let acc = 0;
+      counts.forEach((n, i) => { acc += n; pts.push([(i + 1) / counts.length, acc / s.total]); });
+      return pts;
+    };
+    const W = 460; const H = 300;
+    const pathOf = (pts) => pts.map((p, i) => `${i ? 'L' : 'M'}${(p[0] * W).toFixed(1)} ${(H - p[1] * H).toFixed(1)}`).join('');
+    const onlyMine = [...A.artists.values()].filter((x) => !shared.has(x.key)).sort((x, y) => y.n - x.n).slice(0, 12);
+    const onlyHers = [...B.artists.values()].filter((x) => !shared.has(x.key)).sort((x, y) => y.n - x.n).slice(0, 12);
+    view.innerHTML = `${head}
+      <div class="cmp-stats">
+        <div class="cmp-stat"><b>${sa.per.toFixed(1)}</b><span>Adrian's tracks per artist</span></div>
+        <div class="cmp-stat"><b>${sb.per.toFixed(1)}</b><span>Sharlene's tracks per artist</span></div>
+        <div class="cmp-stat"><b>${sa.top10pc.toFixed(0)}% / ${sb.top10pc.toFixed(0)}%</b><span>of each library in its top 10 artists</span></div>
+      </div>
+      <h2 class="sect">Deep vs broad</h2>
+      <p class="ent-meta">Artists ranked by how much of the library they account for, biggest first.
+        A straight line would mean every artist gets equal play; the steeper the climb, the more the
+        library leans on a favourite few.</p>
+      <svg class="cmp-curve" viewBox="0 0 ${W} ${H}" role="img" aria-label="Concentration of each library">
+        <line x1="0" y1="${H}" x2="${W}" y2="0" stroke="#2e4a56" stroke-dasharray="4 4"/>
+        <path d="${pathOf(curve(A))}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>
+        <path d="${pathOf(curve(B))}" fill="none" stroke="var(--person)" stroke-width="2.5"/>
+      </svg>
+      <div class="cmp-legend"><span><i class="sw a"></i>Adrian — ${sa.artists} artists, ${sa.onlyOne} of them a single song</span>
+        <span><i class="sw b"></i>Sharlene — ${sb.artists} artists, ${sb.onlyOne} of them a single song</span></div>
+      <h2 class="sect">Entirely his</h2>
+      <div class="chips">${onlyMine.map((x) => `<a class="bchip" href="#/search/artist/${encodeURIComponent(x.name)}">${esc(x.name)}<span class="bn">${x.n}</span></a>`).join('')}</div>
+      <h2 class="sect">Entirely hers</h2>
+      <div class="chips">${onlyHers.map((x) => `<a class="bchip" href="#/search/artist/${encodeURIComponent(x.name)}">${esc(x.name)}<span class="bn">${x.n}</span></a>`).join('')}</div>`;
   }
 
   // --- Search ----------------------------------------------------------------
@@ -340,6 +533,25 @@
     return { artists: [...byId.values()], byId };
   }
 
+  // Two libraries, one app. The route already carries the dataset, so switching
+  // person is just swapping the set and keeping the view — which means every
+  // link stays shareable (Adrian sends these to Sharlene) rather than depending
+  // on a setting stashed in localStorage.
+  const PEOPLE = [
+    { set: 'liked-music', who: 'Adrian' },
+    { set: 'liked-music-sharlene', who: 'Sharlene' },
+  ];
+  const whoOf = (set) => PEOPLE.find((p) => p.set === set)?.who || set;
+  function whoSwitch(name, sub) {
+    if (!PEOPLE.some((p) => p.set === name)) return '';
+    const view = sub && sub !== 'overview' ? `/${sub}` : '';
+    return `<nav class="whoswitch" aria-label="Whose library">
+      ${PEOPLE.map((p) => `<a class="who${p.set === name ? ' on' : ''}"
+        href="#/data/${p.set}${view}">${esc(p.who)}</a>`).join('')}
+      <a class="who who-both" href="#/compare${view}">Both</a>
+    </nav>`;
+  }
+
   function dsTabs(name, active, enr) {
     const tab = (id, label) => `<a class="dtab${active === id ? ' on' : ''}"
       href="#/data/${esc(name)}${id === 'overview' ? '' : '/' + id}">${label}</a>`;
@@ -360,10 +572,12 @@
           <pre class="raw">${esc(JSON.stringify(d.liked, null, 2)).slice(0, 20000)}</pre>`;
         return;
       }
+      const person = PEOPLE.some((p) => p.set === name);
       const head = `
-        <span class="ent-kind">Dataset</span>
-        <h1 class="ent-title">${esc(name)}</h1>
+        <span class="ent-kind">${person ? 'Lyked by' : 'Dataset'}</span>
+        <h1 class="ent-title">${esc(person ? whoOf(name) : name)}</h1>
         <p class="ent-meta">${esc(d.liked.source || '')}${d.liked.extracted ? ` · extracted ${esc(d.liked.extracted.slice(0, 10))}` : ''}</p>
+        ${whoSwitch(name, sub)}
         ${dsTabs(name, sub, d.enr)}`;
       if (sub === 'timeline') return viewTimeline(head, d);
       if (sub === 'bands') return viewBands(head, d);
