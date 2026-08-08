@@ -999,10 +999,10 @@
             }
           });
         }
-        // Anything you deliberately pulled in gets named, whatever the mode —
-        // discovering a nameless dot would be pointless.
-        if (newIds.length) markNamed(cy.collection(newIds.map((i2) => cy.getElementById(i2))));
-        markNamed(n0);
+        // New nodes obey the names toggle like everything else — hiding some
+        // greys and naming others depending on when you last flipped it was
+        // incoherent. Tick "all names", or click a node, to identify one.
+        if (newIds.length) applyNameMode();
         const total = from + batch.length;
         if (all.length > total) {
           showSel(`<strong>${esc(n0.data('label'))}</strong>
