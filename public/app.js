@@ -269,7 +269,63 @@
   function cmpTabs(active) {
     const tab = (id, label) => `<a class="dtab${active === id ? ' on' : ''}"
       href="#/compare${id === 'overview' ? '' : '/' + id}">${label}</a>`;
-    return `<nav class="dtabs">${tab('overview', 'Common ground')}${tab('artists', 'Shared artists')}${tab('contrast', 'Contrast')}</nav>`;
+    return `<nav class="dtabs">${tab('overview', 'Common ground')}${tab('artists', 'Shared artists')}${tab('contrast', 'Contrast')}${tab('guess', 'Guess who')}</nav>`;
+  }
+
+  // Whose is it? 20 rounds of "who liked this" — the only view here that needs
+  // no MusicBrainz data at all, and the one most likely to start an argument.
+  function cmpGuess(head, c) {
+    const { A, B, sharedArtists } = c;
+    const sharedKeys = new Set(sharedArtists.map((x) => x.key));
+    // Only artists with a bit of weight, so a one-off cameo isn't a fair test.
+    const pick = (side, other) => [...side.artists.values()]
+      .filter((x) => x.n >= 3 && !sharedKeys.has(x.key))
+      .map((x) => ({ name: x.name, answer: side.who, n: x.n }));
+    const bothPool = sharedArtists.filter((x) => Math.min(x.a, x.b) >= 3)
+      .map((x) => ({ name: x.name, answer: 'Both', a: x.a, b: x.b }));
+    const pool = [...pick(A, B), ...pick(B, A), ...bothPool];
+    const shuffled = pool.slice().sort(() => Math.random() - 0.5).slice(0, 20);
+    let i = 0; let score = 0;
+    const render = () => {
+      const q = shuffled[i];
+      if (!q) {
+        view.innerHTML = `${head}
+          <div class="guess-card done">
+            <p class="guess-score">${score} / ${shuffled.length}</p>
+            <p class="ent-meta">${score >= 16 ? 'You know each other disturbingly well.'
+              : score >= 11 ? 'Better than a coin toss, which is the main thing.'
+              : 'Room for improvement. Or the shuffle was cruel.'}</p>
+            <button class="dtab" id="guess-again">go again</button>
+          </div>`;
+        document.getElementById('guess-again').addEventListener('click', () => cmpGuess(head, c));
+        return;
+      }
+      view.innerHTML = `${head}
+        <div class="guess-card">
+          <p class="r-sub">${i + 1} of ${shuffled.length} · ${score} right</p>
+          <p class="guess-name">${esc(q.name)}</p>
+          <p class="ent-meta">Whose likes is this artist in?</p>
+          <div class="guess-btns">
+            <button class="dtab" data-ans="Adrian">Adrian</button>
+            <button class="dtab" data-ans="Sharlene">Sharlene</button>
+            <button class="dtab" data-ans="Both">Both</button>
+          </div>
+          <p class="guess-verdict" id="guess-verdict"></p>
+        </div>`;
+      view.querySelectorAll('[data-ans]').forEach((b) => b.addEventListener('click', () => {
+        const right = b.dataset.ans === q.answer;
+        if (right) score += 1;
+        const detail = q.answer === 'Both'
+          ? `Both — Adrian ${q.a}, Sharlene ${q.b}`
+          : `${q.answer} only — ${q.n} track${q.n === 1 ? '' : 's'}`;
+        const v = document.getElementById('guess-verdict');
+        v.className = `guess-verdict ${right ? 'yes' : 'no'}`;
+        v.textContent = `${right ? '✓' : '✗'} ${detail}`;
+        view.querySelectorAll('[data-ans]').forEach((x) => { x.disabled = true; });
+        setTimeout(() => { i += 1; render(); }, 1100);
+      }));
+    };
+    render();
   }
 
   async function renderCompare(sub) {
@@ -285,6 +341,7 @@
         ${cmpTabs(sub)}`;
       if (sub === 'artists') return cmpArtists(head, c);
       if (sub === 'contrast') return cmpContrast(head, c);
+      if (sub === 'guess') return cmpGuess(head, c);
       return cmpOverview(head, c);
     } catch (e) {
       view.innerHTML = `<p class="error">Couldn't load both libraries: ${esc(e.message)}</p>`;
