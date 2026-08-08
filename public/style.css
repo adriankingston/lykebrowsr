@@ -451,6 +451,39 @@ table.tracks td.len { text-align: right; }
 
 /* In-graph info panel (double-click a node) */
 .gwrap { position: relative; }
+/* Graph controls, bottom-left of the canvas so they clear the info panel. */
+.gctl {
+  position: absolute;
+  left: 10px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 5;
+  background: rgba(17, 29, 34, .82);
+  border: 1px solid var(--line);
+  padding: 5px 8px;
+}
+.gc-btn {
+  background: var(--chip);
+  color: var(--text);
+  border: 1px solid var(--line);
+  min-width: 26px;
+  height: 24px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.gc-btn:hover { border-color: var(--accent); color: var(--accent); }
+.gc-tog {
+  color: var(--muted);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  margin-left: 4px;
+}
 .gpanel {
   position: absolute;
   top: 14px;

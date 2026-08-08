@@ -759,6 +759,16 @@
         col: '#8fd0da', person: 0, conn: 0, kind: 'label' } });
     }
     els.push(...edgeEls);
+    // Cytoscape measures font-size in GRAPH units, so labels grow with zoom at
+    // exactly the rate the gaps between nodes do — the label-to-gap ratio never
+    // changes and zooming in cannot declutter. (A median artist name is ~66
+    // units wide against an idealEdgeLength of 70: overlap is the resting state
+    // of a perfectly relaxed layout.) Dividing only the TEXT properties by the
+    // zoom holds labels at a constant on-screen size, so zooming in genuinely
+    // pulls names apart while nodes still grow. Geometry is untouched, so the
+    // expansion ring maths and component packing below keep working.
+    let cyRef = null;
+    const zd = () => (cyRef ? Math.max(cyRef.zoom(), 1) : 1);
     const cy = cytoscape({
       container: document.getElementById('dv-graph'),
       elements: els,
@@ -768,25 +778,25 @@
           label: 'data(label)',
           color: '#e5edf0',
           'font-family': 'Quantico, sans-serif',
-          'font-size': 11,
+          'font-size': () => 11 / zd(),
           'text-valign': 'bottom',
-          'text-margin-y': 4,
+          'text-margin-y': () => 4 / zd(),
           width: (n) => 12 + Math.min(n.data('n'), 60) * 0.5,
           height: (n) => 12 + Math.min(n.data('n'), 60) * 0.5,
         } },
         { selector: 'node[person = 1]', style: { shape: 'diamond' } },
         { selector: 'node[conn = 1]', style: {
-          width: 11, height: 11, 'font-size': 9, color: '#c9b27a',
+          width: 11, height: 11, 'font-size': () => 9 / zd(), color: '#c9b27a',
         } },
         { selector: 'node[grey = 1]', style: {
-          'background-color': '#4d5a63', color: '#91a7b0', 'font-size': 9,
+          'background-color': '#4d5a63', color: '#91a7b0', 'font-size': () => 9 / zd(),
           width: 12, height: 12,
         } },
         { selector: 'node[kind = "label"]', style: {
           shape: 'round-rectangle',
           'background-color': '#8fd0da',
           color: '#8fd0da',
-          'font-size': 10,
+          'font-size': () => 10 / zd(),
           width: (n) => Math.min(11 + n.data('n') * 2.2, 32),
           height: (n) => Math.min(11 + n.data('n') * 2.2, 32) * 0.72,
         } },
@@ -796,7 +806,7 @@
           'line-color': '#2e4a56',
           'curve-style': 'bezier',
           label: 'data(label)',
-          'font-size': 8,
+          'font-size': () => 8 / zd(),
           color: '#91a7b0',
           'text-opacity': 0,
         } },
@@ -808,30 +818,59 @@
         } },
         { selector: 'edge:selected, edge.hl', style: { 'text-opacity': 1, 'line-color': '#2ee6c8' } },
         { selector: 'node:selected', style: { 'border-width': 2, 'border-color': '#fff' } },
+        // Focus mode: everything beyond two hops recedes, labels included.
+        { selector: '.dim', style: { opacity: 0.12, 'text-opacity': 0 } },
+        { selector: 'node.focus', style: { 'text-opacity': 1 } },
       ],
       layout: { name: 'preset' }, // real layout runs below, after handlers attach
       wheelSensitivity: 0.3,
+      minZoom: 0.08,
+      maxZoom: 4,
     });
+    cyRef = cy;
+    // Restyling 568 nodes + 741 edges on every wheel tick is wasteful, so only
+    // repaint when the zoom crosses a ~5% step — imperceptible size drift.
+    let lastStep = null;
+    let queued = false;
+    cy.on('zoom', () => {
+      const step = Math.round(Math.log(Math.max(cy.zoom(), 1)) / Math.log(1.05));
+      if (step === lastStep || queued) return;
+      queued = true;
+      requestAnimationFrame(() => {
+        queued = false;
+        lastStep = step;
+        cy.style().update();
+      });
+    });
+
     // cose only shapes CONNECTED clusters — disconnected islands feel nothing
     // but repulsion + gravity and end up wherever the random seed flung them.
     // So after the physics settles, keep the main constellation in place and
     // grid-pack the small components neatly beneath it.
+    // Label bounds now depend on zoom, so pack on geometry alone — otherwise
+    // the packing would come out differently depending on the current zoom.
+    const bb = (eles) => eles.boundingBox({ includeLabels: false });
+    let mainComp = null;
     const packComponents = () => {
       const comps = cy.elements().components().sort((a, b) => b.length - a.length);
-      if (comps.length < 2) return;
-      const mb = comps[0].boundingBox();
-      const rowW = Math.max(mb.w, 1400);
-      let px = mb.x1;
-      let py = mb.y2 + 160;
-      let rowH = 0;
-      for (const c of comps.slice(1)) {
-        const b = c.boundingBox();
-        if (px + b.w > mb.x1 + rowW) { px = mb.x1; py += rowH + 110; rowH = 0; }
-        c.shift({ x: px - b.x1, y: py - b.y1 });
-        px += b.w + 110;
-        rowH = Math.max(rowH, b.h);
+      mainComp = comps[0];
+      if (comps.length > 1) {
+        const mb = bb(comps[0]);
+        const rowW = Math.max(mb.w, 1400);
+        let px = mb.x1;
+        let py = mb.y2 + 160;
+        let rowH = 0;
+        for (const c of comps.slice(1)) {
+          const b = bb(c);
+          if (px + b.w > mb.x1 + rowW) { px = mb.x1; py += rowH + 110; rowH = 0; }
+          c.shift({ x: px - b.x1, y: py - b.y1 });
+          px += b.w + 110;
+          rowH = Math.max(rowH, b.h);
+        }
       }
-      cy.fit(undefined, 30);
+      // Open on the main constellation. Fitting everything had to swallow the
+      // packed islands too, landing at a zoom where every label was a smear.
+      cy.fit(mainComp, 40);
       window.__gpacked = true;
     };
     // Attached to the layout BEFORE run(): a constructor-declared layout can
@@ -853,8 +892,13 @@
     lay.run();
 
     // The Claude preview pane loads pages at 0×0 — resize before fitting or
-    // the viewport math is garbage (musikrawlr lesson).
-    const ro = new ResizeObserver(() => { cy.resize(); cy.fit(undefined, 30); });
+    // the viewport math is garbage (musikrawlr lesson). Only the FIRST resize
+    // fits: re-fitting on every window resize threw away wherever you'd panned.
+    let fitted = false;
+    const ro = new ResizeObserver(() => {
+      cy.resize();
+      if (!fitted && cy.width() > 0) { fitted = true; cy.fit(mainComp || undefined, 40); }
+    });
     ro.observe(document.getElementById('dv-graph'));
     // Tap selects and offers the destinations; instant navigation away from a
     // graph you're mid-exploring proved annoying in musikrawlr.
@@ -863,13 +907,22 @@
     // as grey nodes — themselves expandable, so a discovery trail can keep
     // going. Live lookups share the server's polite queue and disk cache.
     const junkRel = /tribute|karaoke|cover band/i;
-    const expandedNodes = new Set();
+    const expandedNodes = new Map(); // node id → how many relations shown so far
+    const showSel = (html) => {
+      const strip = document.getElementById('gsel');
+      if (!strip) return;
+      strip.hidden = false;
+      strip.innerHTML = html;
+    };
     async function expandNode(id) {
       const n0 = cy.getElementById(id);
       if (n0.empty() || n0.data('kind') === 'label') return;
       n0.addClass('xp');
-      if (expandedNodes.has(id)) return;
-      expandedNodes.add(id);
+      // Already expanded? Pull the NEXT batch rather than doing nothing — hubs
+      // are capped per click, so [+] pages through them.
+      const shown = expandedNodes.get(id) || 0;
+      if (shown && shown >= (n0.data('relTotal') || 0)) return;
+      expandedNodes.set(id, shown || 1);
       try {
         const art = await api(`/api/lookup?type=artist&id=${id}&inc=artist-rels`);
         const pos = n0.position();
@@ -877,14 +930,26 @@
           r.artist && r.artist.id !== id
           && (r.type === 'member of band' || r.type === 'collaboration')
           && !junkRel.test(r.artist.disambiguation || ''));
-        const newIds = [];
+        // One artist can appear in many relations (Nine Inch Nails returns 131
+        // rows for 33 distinct people). Dedupe, then cap: an uncapped hub threw
+        // a ring hundreds of pixels wide straight across the constellation.
+        const seen = new Map();
         for (const r of rels) {
           const o = r.artist;
-          const kind = r.type === 'collaboration' ? 'collab' : 'member';
+          if (!seen.has(o.id)) seen.set(o.id, { artist: o, rel: r, kind: r.type === 'collaboration' ? 'collab' : 'member' });
+        }
+        const all = [...seen.values()];
+        n0.data('relTotal', all.length);
+        const CAP = 12;
+        const from = shown;
+        const batch = all.slice(from, from + CAP);
+        expandedNodes.set(id, from + batch.length);
+        const newIds = [];
+        for (const { artist: o, rel: r, kind } of batch) {
           if (cy.getElementById(o.id).empty()) {
             cy.add({
               data: { id: o.id, label: o.name, n: 0, col: '#4d5a63',
-                person: o.type === 'Person' ? 1 : 0, conn: 0, grey: 1 },
+                person: o.type === 'Person' ? 1 : 0, conn: 0, grey: 1, from: id },
               position: { x: pos.x, y: pos.y },
             });
             newIds.push(o.id);
@@ -893,22 +958,65 @@
           if (cy.getElementById(ekey).empty()) {
             const yrs = (r.begin || r.end)
               ? `${(r.begin || '').slice(0, 4) || '?'}–${(r.end || '').slice(0, 4)}` : kind;
-            cy.add({ data: { id: ekey, source: id, target: o.id, label: yrs, kind } });
+            cy.add({ data: { id: ekey, source: id, target: o.id, label: yrs, kind, from: id } });
           }
         }
-        // A tidy circle around the parent, NO global relayout — expanding must
-        // never yank the viewport around (it did, and it was jarring).
+        // Place each new node in the first free spot on widening rings, rather
+        // than blindly on one circle — the old ring dropped roughly one node in
+        // eight straight on top of an existing one.
         if (newIds.length) {
-          const R = Math.max(95, (newIds.length * 34) / (2 * Math.PI));
+          const occupied = cy.nodes().filter((n) => !newIds.includes(n.id()))
+            .map((n) => ({ p: n.position(), r: Math.max(n.width(), n.height()) / 2 }));
+          const clear = (x, y, rad) => !occupied.some((o) => {
+            const dx = o.p.x - x; const dy = o.p.y - y;
+            return Math.hypot(dx, dy) < o.r + rad + 26;
+          });
           newIds.forEach((nid, i) => {
-            const ang = (i / newIds.length) * Math.PI * 2 - Math.PI / 2;
-            cy.getElementById(nid).position({
-              x: pos.x + Math.cos(ang) * R,
-              y: pos.y + Math.sin(ang) * R,
-            });
+            const node = cy.getElementById(nid);
+            const rad = Math.max(node.width(), node.height()) / 2;
+            let placed = false;
+            for (let ring = 0; ring < 8 && !placed; ring++) {
+              const R = 95 + ring * 46;
+              const slots = Math.max(8, Math.round((2 * Math.PI * R) / 44));
+              const offset = (i * 2.399) + ring * 0.7; // golden-angle stagger
+              for (let s = 0; s < slots; s++) {
+                const ang = offset + (s / slots) * Math.PI * 2;
+                const x = pos.x + Math.cos(ang) * R;
+                const y = pos.y + Math.sin(ang) * R;
+                if (clear(x, y, rad)) {
+                  node.position({ x, y });
+                  occupied.push({ p: { x, y }, r: rad });
+                  placed = true;
+                  break;
+                }
+              }
+            }
+            if (!placed) { // everything crowded — fall back to the old ring
+              const ang = (i / newIds.length) * Math.PI * 2 - Math.PI / 2;
+              node.position({ x: pos.x + Math.cos(ang) * 150, y: pos.y + Math.sin(ang) * 150 });
+            }
           });
         }
-      } catch { expandedNodes.delete(id); /* transient — retry allowed */ }
+        const total = from + batch.length;
+        if (all.length > total) {
+          showSel(`<strong>${esc(n0.data('label'))}</strong>
+            <span class="r-sub">showing ${total} of ${all.length} related artists — hit + again for the next ${Math.min(CAP, all.length - total)}</span>`);
+        } else if (all.length > CAP) {
+          showSel(`<strong>${esc(n0.data('label'))}</strong>
+            <span class="r-sub">all ${all.length} related artists shown</span>`);
+        }
+      } catch { expandedNodes.set(id, shown); /* transient — retry allowed */ }
+    }
+
+    // Expansion is no longer one-way: drop everything this node pulled in,
+    // provided those nodes haven't themselves been expanded.
+    function collapseNode(id) {
+      const kids = cy.nodes(`[from = "${id}"][grey = 1]`).filter((n) => !expandedNodes.get(n.id()));
+      kids.connectedEdges().remove();
+      kids.remove();
+      cy.edges(`[from = "${id}"]`).remove();
+      expandedNodes.delete(id);
+      cy.getElementById(id).removeClass('xp').removeData('more');
     }
 
     // Double-click opens the in-graph info panel. Cytoscape has no native
@@ -999,6 +1107,7 @@
     hov.id = 'ghover';
     hov.innerHTML = `
       <button class="gh-btn gh-plus" title="Expand — this artist's other bands and members; grey means new to you">+</button>
+      <button class="gh-btn gh-minus" title="Collapse — remove what this node pulled in" hidden>−</button>
       <button class="gh-btn gh-yt" title="Open in ${esc(SVC().name)}">${SVC().icon}</button>`;
     hov.hidden = true;
     document.querySelector('.gwrap').appendChild(hov);
@@ -1022,6 +1131,7 @@
       if (ev.target.data('kind') === 'label') return; // expand/play don't apply
       clearTimeout(hovHide);
       hovFor = ev.target.id();
+      hov.querySelector('.gh-minus').hidden = !expandedNodes.get(hovFor);
       hov.hidden = false;
       placeHover();
     });
@@ -1030,7 +1140,15 @@
     hov.addEventListener('mouseleave', scheduleHideHover);
     hov.querySelector('.gh-plus').addEventListener('click', (e) => {
       e.stopPropagation();
-      if (hovFor) expandNode(hovFor);
+      if (hovFor) expandNode(hovFor).then(() => {
+        hov.querySelector('.gh-minus').hidden = !expandedNodes.get(hovFor);
+      });
+    });
+    hov.querySelector('.gh-minus').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!hovFor) return;
+      collapseNode(hovFor);
+      hov.querySelector('.gh-minus').hidden = true;
     });
     hov.querySelector('.gh-yt').addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1040,8 +1158,59 @@
     });
     cy.on('render pan zoom', () => { if (!hov.hidden) requestAnimationFrame(placeHover); });
 
+    // Focus: selecting a node fades everything more than two hops away. A
+    // typical neighbourhood is ~9 nodes of 568, so the scene you're actually
+    // reading becomes the only thing on screen. Driven by tap, not hover —
+    // hover-driven dimming thrashes and fights the [+] cluster.
+    let focusOn = false;
+    const clearFocus = () => {
+      if (!focusOn) return;
+      focusOn = false;
+      cy.elements().removeClass('dim focus');
+    };
+    const focusOnNode = (id) => {
+      const n = cy.getElementById(id);
+      if (n.empty()) return;
+      let hood = n.closedNeighborhood();
+      hood = hood.union(hood.nodes().closedNeighborhood()); // two hops
+      cy.elements().addClass('dim');
+      hood.removeClass('dim').addClass('focus');
+      focusOn = true;
+    };
+
+    // Controls: zoom in/out, refit, and a record-label toggle. Labels alone are
+    // 104 nodes and 412 of the 741 edges — over half the lines on screen.
+    const bar = document.createElement('div');
+    bar.className = 'gctl';
+    const labelsHidden = localStorage.getItem('lyke.graph.nolabels') === '1';
+    bar.innerHTML = `
+      <button class="gc-btn" data-z="in" title="Zoom in">+</button>
+      <button class="gc-btn" data-z="out" title="Zoom out">−</button>
+      <button class="gc-btn" data-z="fit" title="Fit the main constellation">fit</button>
+      <label class="gc-tog"><input type="checkbox" id="gc-lab" ${labelsHidden ? '' : 'checked'}> record labels</label>`;
+    document.querySelector('.gwrap').appendChild(bar);
+    const zoomBy = (f) => cy.animate({ zoom: cy.zoom() * f, center: { eles: cy.$(':selected').length ? cy.$(':selected') : undefined } }, { duration: 180 });
+    bar.querySelectorAll('[data-z]').forEach((b) => b.addEventListener('click', () => {
+      const k = b.dataset.z;
+      if (k === 'in') zoomBy(1.4);
+      else if (k === 'out') zoomBy(1 / 1.4);
+      else cy.animate({ fit: { eles: mainComp || cy.elements(), padding: 40 } }, { duration: 260 });
+    }));
+    const applyLabelVis = (show) => {
+      const els2 = cy.nodes('[kind = "label"]');
+      if (show) { els2.style('display', 'element'); els2.connectedEdges().style('display', 'element'); }
+      else { els2.style('display', 'none'); els2.connectedEdges().style('display', 'none'); }
+    };
+    document.getElementById('gc-lab').addEventListener('change', (e) => {
+      localStorage.setItem('lyke.graph.nolabels', e.target.checked ? '0' : '1');
+      applyLabelVis(e.target.checked);
+    });
+    if (labelsHidden) applyLabelVis(false);
+
     window.__gpanel = openPanel; // console/debug handles
     window.__gexpand = expandNode;
+    window.__gfocus = focusOnNode;
+    window.__gcollapse = collapseNode;
     window.__gcy = cy;
 
     let lastTap = { id: null, t: 0 };
@@ -1054,6 +1223,7 @@
         return;
       }
       lastTap = { id, t: now };
+      focusOnNode(id);
       const strip = document.getElementById('gsel');
       if (!strip) return;
       if (labelMap.has(id)) {
@@ -1086,7 +1256,12 @@
           ${actions}`;
       }
     });
-    cy.on('tap', (ev) => { if (ev.target === cy) { const s = document.getElementById('gsel'); if (s) s.hidden = true; } });
+    cy.on('tap', (ev) => {
+      if (ev.target !== cy) return;
+      const s = document.getElementById('gsel');
+      if (s) s.hidden = true;
+      clearFocus();
+    });
     cy.on('mouseover', 'edge', (ev) => ev.target.addClass('hl'));
     cy.on('mouseout', 'edge', (ev) => ev.target.removeClass('hl'));
   }
