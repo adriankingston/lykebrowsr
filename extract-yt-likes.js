@@ -56,17 +56,22 @@ if (process.argv.includes('--save-cookie')) {
 
 const cookie = (process.env.YT_COOKIE || '').trim();
 if (!cookie) {
-  console.error(`No YT_COOKIE set.
+  console.error(`No YT_COOKIE set (or the saved one has stopped authenticating).
 
-Copy your YouTube Music cookies into .env once (they last months):
-  1. Open https://music.youtube.com in Chrome, signed in.
-  2. DevTools → Network tab → filter "browse".
-  3. Click any /youtubei/v1/browse request → Headers → Request Headers.
-  4. Copy the whole "cookie:" value.
-  5. Put it in .env as:  YT_COOKIE='<paste>'
+Use an INCOGNITO window. Google rotates the session cookies of any window you
+keep using, and a copy taken from your normal browsing session gets invalidated
+within a day or so. A private window you never touch again keeps working.
+
+  1. Open an incognito window (⇧⌘N) and sign in at https://music.youtube.com
+  2. DevTools (⌥⌘I) → Network → filter "browse" → click the playlist, or scroll,
+     until a /youtubei/v1/browse row appears.
+  3. Right-click that row → Copy → Copy as cURL.
+  4. Run:  pbpaste | node extract-yt-likes.js --save-cookie
+  5. CLOSE the incognito window WITHOUT signing out. Signing out kills the
+     session; closing it simply leaves it parked.
 
 Treat that line like a password — it authenticates as your Google account.
-.env is gitignored.`);
+.env is gitignored and written 0600.`);
   process.exit(1);
 }
 
