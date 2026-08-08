@@ -26,6 +26,14 @@ fail() {
 
 say "--- update starting ---"
 
+# The job commits wherever HEAD happens to be but always pushes main. If the
+# repo is left on a feature branch, the commit lands there, `git push main`
+# reports "everything up-to-date" and the refresh silently never goes live.
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+if [ "$BRANCH" != "main" ]; then
+  fail "repo is on branch '$BRANCH', not main — refresh not published"
+fi
+
 # Keep the log from growing without bound.
 if [ -f "$LOG" ] && [ "$(wc -c < "$LOG")" -gt 200000 ]; then
   tail -n 400 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
