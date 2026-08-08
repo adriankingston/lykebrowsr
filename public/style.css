@@ -180,7 +180,9 @@ a:hover { color: var(--accent); }
 /* The title sits a third of the way down the viewport: 33vh less the header
    (59px) and #view's own top padding (26px). Padding, not margin, so the
    heading's margin can't collapse through it and skew the offset. */
-#view.home .datasets { margin-top: 0; padding-top: calc(33vh - 111px); }
+/* 33vh less the header (59), #view's top padding (26) and the panel's own
+   top padding (62) — so it's the TITLE that lands a third down, not the slab. */
+#view.home .datasets { margin-top: 0; padding-top: calc(33vh - 147px); }
 #view.home .sect {
   text-align: center;
   font-size: 26px;
@@ -220,7 +222,10 @@ a:hover { color: var(--accent); }
   background: rgba(6, 14, 18, 0.72);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: var(--radius);
-  padding: 26px 28px 30px;
+  /* Generous top/bottom: the content is centred in a 1000px slab, so the
+     visual side margins are far wider than the padding value — tight
+     top/bottom read as cramped against them. */
+  padding: 62px 32px 62px;
   backdrop-filter: blur(3px);
 }
 /* The data/ hint lives in the shared footer but only shows on home. */
