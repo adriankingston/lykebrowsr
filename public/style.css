@@ -191,12 +191,27 @@ a:hover { color: var(--accent); }
   padding-bottom: 0;
   margin-top: 0;
 }
-#view.home .home-views { justify-content: center; }
-/* Equal-width tabs: the widest label sets the size for all five. */
-#view.home .home-views .dtab { min-width: 110px; text-align: center; }
+/* Title, tabs and search all share one column width, set to the title's
+   natural width so the three stack as a single block. */
+#view.home { --home-w: 648px; }
+#view.home .sect,
+#view.home .home-views,
+#view.home .home-search {
+  width: min(var(--home-w), 100%);
+  margin-left: auto;
+  margin-right: auto;
+}
+#view.home .home-views { justify-content: center; flex-wrap: nowrap; }
+/* Five equal tabs filling the column exactly, rather than a fixed min-width. */
+#view.home .home-views .dtab { flex: 1; min-width: 0; text-align: center; padding: 10px 4px; }
+/* Narrower than the column, five-across clips the labels — let them wrap. */
+@media (max-width: 700px) {
+  #view.home .home-views { flex-wrap: wrap; justify-content: center; }
+  #view.home .home-views .dtab { flex: 0 1 auto; padding: 8px 14px; }
+}
 /* Search moves out of the header and under the tabs on home. */
-.home-search { display: flex; justify-content: center; margin-top: 18px; }
-.home-search .search-wrap { flex: 0 1 620px; margin: 0; }
+.home-search { display: flex; margin-top: 18px; }
+.home-search .search-wrap { flex: 1; max-width: none; margin: 0; }
 /* First-album covers for the top lyked artists, dimmed behind everything.
    Negative z-index paints above the body background but below all content. */
 .home-bg {
