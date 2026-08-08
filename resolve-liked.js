@@ -331,7 +331,9 @@ async function resolveCovers() {
             releaseGroup: g.id,
             title: g.title,
             // Hop-2 URL: skips coverartarchive.org's redirect entirely.
-            url: `https://archive.org/download/mbid-${relId}/mbid-${relId}-${front.id}_thumb250.jpg`,
+            // 500px, not 250: on a wide screen the wall's cells are ~370px,
+            // where 250 upscales visibly. Costs ~150-250ms more per image.
+            url: `https://archive.org/download/mbid-${relId}/mbid-${relId}-${front.id}_thumb500.jpg`,
           };
           break;
         } catch { /* no art for this album — try the next */ }
