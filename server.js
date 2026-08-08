@@ -295,6 +295,25 @@ async function apiNotability(req, res, url) {
 // served here: GET /api/data lists what exists, GET /api/data?set=<name>
 // returns it. Personal listening data, scraped extras, hand-built overlays —
 // anything the public APIs don't have lives in this folder.
+// Freshness of each library, cheaply. The file's mtime is no use — Railway
+// checks the repo out fresh on every deploy — so read the extraction date the
+// extractor stamps inside the file. Lets the UI notice a stalled daily update.
+async function apiStatus(req, res) {
+  const sets = [];
+  for (const f of fs.readdirSync(DATA_DIR)) {
+    if (!/^liked-music(-(?!enriched|covers)[a-z]+)?\.json$/.test(f)) continue;
+    try {
+      const d = JSON.parse(fs.readFileSync(path.join(DATA_DIR, f), 'utf8'));
+      sets.push({
+        name: f.replace(/\.json$/, ''),
+        extracted: d.extracted || null,
+        count: d.count || (d.tracks || []).length,
+      });
+    } catch { /* unreadable — skip */ }
+  }
+  sendJson(res, 200, { sets, now: new Date().toISOString() });
+}
+
 async function apiData(req, res, url) {
   const set = url.searchParams.get('set');
   if (!set) {
@@ -322,6 +341,7 @@ const routes = {
   'GET /api/enrich': apiEnrich,
   'GET /api/notability': apiNotability,
   'GET /api/data': apiData,
+  'GET /api/status': apiStatus,
 };
 
 // --- Server ------------------------------------------------------------------

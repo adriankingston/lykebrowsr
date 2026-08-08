@@ -2,13 +2,14 @@
   "name": "lykebrowsr",
   "version": "0.1.0",
   "private": true,
-  "description": "dig into the detail — a MusicBrainz catalogue browser, companion to musikrawlr",
+  "description": "dig into the detail \u2014 a MusicBrainz catalogue browser, companion to musikrawlr",
   "license": "MIT",
   "scripts": {
     "start": "node server.js",
     "extract": "node extract-yt-likes.js",
     "resolve": "node resolve-liked.js && node resolve-liked.js --genres && node resolve-liked.js --labels && node resolve-liked.js --covers",
-    "update": "npm run extract && npm run resolve"
+    "update": "npm run extract && npm run resolve",
+    "check": "node check.js"
   },
   "engines": {
     "node": ">=18"

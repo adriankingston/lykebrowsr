@@ -703,3 +703,26 @@ pre.raw {
 .guess-verdict.no { color: var(--warn); }
 .guess-score { font-family: Cal Sans, Quantico, sans-serif; font-size: 54px; color: #fff; margin: 0; }
 .cmp-eras { width: 100%; height: auto; display: block; margin: 4px 0 10px; }
+/* Daily-refresh backstop: shown when a library has gone stale. */
+.stale {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #3a2a2f;
+  border-bottom: 1px solid #6b4351;
+  color: #ffd7e0;
+  font-size: 13px;
+  padding: 10px 20px;
+}
+.stale code { background: rgba(0,0,0,.3); padding: 1px 5px; }
+.stale-x {
+  margin-left: auto;
+  background: none;
+  border: 0;
+  color: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: .7;
+}
+.stale-x:hover { opacity: 1; }

@@ -148,3 +148,251 @@
 04:54:36 labels 280/315
 04:54:55 labels 300/315
 04:55:11 label pass done — 304/315 artists have labels
+10:01:23 start — 1796 tracks, 0 already resolved
+10:01:54 tracks 25/1796
+10:02:17 tracks 50/1796
+10:02:46 tracks 75/1796
+10:02:46 tracks 100/1796
+10:02:50 tracks 125/1796
+10:02:51 tracks 150/1796
+10:02:59 tracks 175/1796
+10:03:08 tracks 200/1796
+10:03:08 tracks 225/1796
+10:03:08 tracks 250/1796
+10:03:08 tracks 275/1796
+10:03:08 tracks 300/1796
+10:03:08 tracks 325/1796
+10:03:08 tracks 350/1796
+10:03:08 tracks 375/1796
+10:03:08 tracks 400/1796
+10:03:08 tracks 425/1796
+10:03:08 tracks 450/1796
+10:03:08 tracks 475/1796
+10:03:08 tracks 500/1796
+10:03:08 tracks 525/1796
+10:03:08 tracks 550/1796
+10:03:08 tracks 575/1796
+10:03:08 tracks 600/1796
+10:03:08 tracks 625/1796
+10:03:08 tracks 650/1796
+10:03:08 tracks 675/1796
+10:03:08 tracks 700/1796
+10:03:08 tracks 725/1796
+10:03:08 tracks 750/1796
+10:03:08 tracks 775/1796
+10:03:08 tracks 800/1796
+10:03:08 tracks 825/1796
+10:03:08 tracks 850/1796
+10:03:08 tracks 875/1796
+10:03:08 tracks 900/1796
+10:03:08 tracks 925/1796
+10:03:08 tracks 950/1796
+10:03:08 tracks 975/1796
+10:03:08 tracks 1000/1796
+10:03:08 tracks 1025/1796
+10:03:08 tracks 1050/1796
+10:03:08 tracks 1075/1796
+10:03:08 tracks 1100/1796
+10:03:08 tracks 1125/1796
+10:03:08 tracks 1150/1796
+10:03:08 tracks 1175/1796
+10:03:08 tracks 1200/1796
+10:03:10 tracks 1225/1796
+10:03:18 tracks 1250/1796
+10:03:23 tracks 1275/1796
+10:03:28 tracks 1300/1796
+10:03:28 tracks 1325/1796
+10:03:28 tracks 1350/1796
+10:03:28 tracks 1375/1796
+10:03:28 tracks 1400/1796
+10:03:28 tracks 1425/1796
+10:03:28 tracks 1450/1796
+10:03:28 tracks 1475/1796
+10:03:28 tracks 1500/1796
+10:03:28 tracks 1525/1796
+10:03:28 tracks 1550/1796
+10:03:28 tracks 1575/1796
+10:03:28 tracks 1600/1796
+10:03:28 tracks 1625/1796
+10:03:28 tracks 1650/1796
+10:03:28 tracks 1675/1796
+10:03:28 tracks 1700/1796
+10:03:28 tracks 1725/1796
+10:03:28 tracks 1750/1796
+10:03:28 tracks 1775/1796
+10:03:28 pass 1 complete — 1644/1796 matched
+10:03:55 artists 20/327
+10:03:55 artists 40/327
+10:03:55 artists 60/327
+10:03:55 artists 80/327
+10:03:55 artists 100/327
+10:03:55 artists 120/327
+10:03:55 artists 140/327
+10:03:55 artists 160/327
+10:03:55 artists 180/327
+10:03:55 artists 200/327
+10:03:55 artists 220/327
+10:03:55 artists 240/327
+10:03:55 artists 260/327
+10:03:55 artists 280/327
+10:03:55 artists 300/327
+10:03:55 artists 320/327
+10:03:57 done — 327/331 artists resolved, output /Users/adriankingston/Claude projects/lykebrowsr/data/liked-music-enriched.json
+10:03:57 genre backfill — whitelist 2184 genres
+10:03:57 63 artists lacking genres
+10:04:03 PLOSIVS ← rock, punk, alternative rock, post-hardcore (discogs)
+10:04:13 Big Ups ← rock, punk, hardcore punk, post-hardcore (discogs)
+10:04:31 Blacklisters ← noise, rock, punk (discogs)
+10:04:42 Mind Spiders ← punk, rock, power pop, garage rock, new wave (discogs)
+10:04:42 Career Suicide ← hardcore punk (wikidata)
+10:04:42 Swami John Reis ← punk rock (wikidata)
+10:04:52 DIÄT ← punk, post-punk, rock, post-hardcore, new wave (discogs)
+10:04:52 The Marked Men ← punk rock (wikidata)
+10:04:52 OLD ← grindcore (wikidata)
+10:04:52 Old ← grindcore (wikidata)
+10:04:55 Meat Wave ← punk rock (wikidata)
+10:05:00 Lektron ← punk, rock (discogs)
+10:05:10 Mi-Sex ← rock, synth-pop, electronic, glam, new wave (discogs)
+10:05:13 discogs Th' Dudes: Upstream 404
+10:05:23 CYGNOSIC ← industrial, electro, electronic, ebm (discogs)
+10:05:23 Sultans ← rock and roll (wikidata)
+10:05:23 Treat Her Right ← blues rock (wikidata)
+10:05:34 The Jim Carroll Band ← new wave, rock, punk, art rock (discogs)
+10:05:41 Matt Skiba and the Sekrets ← new wave, rock, alternative rock, punk (discogs)
+10:05:44 Heavens ← alternative rock (wikidata)
+10:05:52 Matt Skiba ← new wave, rock, alternative rock, punk (discogs)
+10:05:52 Re-Volts ← punk rock (wikidata)
+10:06:02 The Peepshows ← rock, punk (discogs)
+10:06:02 Power Of Dreams ← alternative rock (wikidata)
+10:06:05 Straight Faced ← punk rock (wikidata)
+10:06:08 Boris the Sprinkler ← punk rock (wikidata)
+10:06:21 Everready ← punk, rock (discogs)
+10:06:31 H.F.L. ← punk, rock, hardcore punk (discogs)
+10:06:41 White Kaps ← punk, rock (discogs)
+10:06:41 The Night Marchers ← alternative rock (wikidata)
+10:06:41 The Pursuit Of Happiness ← power pop (wikidata)
+10:06:52 Alex Lloyd ← rock, alternative rock, pop (discogs)
+10:06:57 Dan Andriano ← punk, emo, rock (discogs)
+10:07:07 Peepshows ← rock, punk (discogs)
+10:07:07 Lost Sounds ← punk rock (wikidata)
+10:07:07 California X ← indie rock (wikidata)
+10:07:07 Mikal Cronin ← punk rock (wikidata)
+10:07:10 The Generators ← punk rock (wikidata)
+10:07:18 Pato Machete ← latin, hip hop, cumbia (discogs)
+10:07:28 The Arrivals ← punk, rock, hardcore punk (discogs)
+10:07:39 Straitjacket Fits ← rock, indie rock, alternative rock (discogs)
+10:07:39 F.Y.P. ← punk rock (wikidata)
+10:07:39 The Ergs ← punk rock (wikidata)
+10:07:39 genre backfill done — filled 42/63
+10:07:39 label pass — 327 artists
+10:07:42 labels 20/327
+10:07:42 labels 40/327
+10:07:42 labels 60/327
+10:07:42 labels 80/327
+10:07:42 labels 100/327
+10:07:42 labels 120/327
+10:07:42 labels 140/327
+10:07:42 labels 160/327
+10:07:42 labels 180/327
+10:07:42 labels 200/327
+10:07:42 labels 220/327
+10:07:42 labels 240/327
+10:07:42 labels 260/327
+10:07:42 labels 280/327
+10:07:42 labels 300/327
+10:07:42 labels 320/327
+10:07:43 label pass done — 316/327 artists have labels
+10:20:57 migrated checkpoint: 1684/1796 entries re-keyed by title|artist
+10:20:57 start — 1796 tracks, 1684 already resolved, 0 to do
+10:20:57 pass 1 complete — 1554/1796 matched
+10:20:57 done — 327/331 artists resolved, output /Users/adriankingston/Claude projects/lykebrowsr/data/liked-music-enriched.json
+10:21:24 start — 1796 tracks, 1684 already resolved, 0 to do
+10:21:24 pass 1 complete — 1644/1796 matched (1684 unique title+artist)
+10:21:24 done — 327/331 artists resolved, output /Users/adriankingston/Claude projects/lykebrowsr/data/liked-music-enriched.json
+10:41:33 start — 1818 tracks, 1664 already resolved, 37 to do
+10:41:48 tracks 1275/1818
+10:41:48 pass 1 complete — 1686/1818 matched (1699 unique title+artist)
+10:41:48 done — 327/322 artists resolved, output /Users/adriankingston/Claude projects/lykebrowsr/data/liked-music-enriched.json
+10:41:48 genre backfill — whitelist 2184 genres
+10:41:48 21 artists lacking genres
+10:41:58 discogs Th' Dudes: Upstream 404
+10:42:11 genre backfill done — filled 0/21
+10:42:11 label pass — 327 artists
+10:42:11 label pass done — 316/327 artists have labels
+00:19:33 cover pass — top 20 artists
+00:19:42 cover Bad Religion: no art on first 3 albums
+00:19:53 cover Swingin’ Utters: no art on first 3 albums
+00:20:10 cover White Lung: no art on first 3 albums
+00:20:30 cover The Bronx: no art on first 3 albums
+00:20:43 cover Alkaline Trio ← Goddamnit
+00:20:44 cover Cobra Skulls ← Sitting Army
+00:20:47 cover Meat Wave ← Meat Wave
+00:20:49 cover Whores. ← Ruiner. / Clean.
+00:20:51 cover Hot Snakes ← Automatic Midnight
+00:20:53 cover The Peacocks ← Come With Us
+00:20:57 cover Sugar ← Copper Blue
+00:20:59 cover Ministry ← With Sympathy
+00:21:01 cover Off With Their Heads ← Hospitals
+00:21:03 cover NOFX ← Liberal Animation
+00:21:05 cover Fucked Up ← Epics in Minutes
+00:21:07 cover PLOSIVS ← PLOSIVS
+00:21:11 cover METZ ← METZ
+00:21:13 cover Dead to Me ← Cuban Ballerina
+00:21:14 cover Spiderbait ← ShashavaGlava
+00:22:29 cover Tiger Army: no art on first 3 albums
+00:22:29 cover pass done — 15/20 artists have art
+00:23:50 cover pass — top 20 artists
+00:23:52 cover Bad Religion ← How Could Hell Be Any Worse?
+00:23:54 cover Swingin’ Utters ← The Streets of San Francisco
+00:23:56 cover White Lung ← It's the Evil
+00:24:04 cover The Bronx ← Live at the Annandale
+00:24:04 cover Alkaline Trio ← Goddamnit
+00:24:04 cover Cobra Skulls ← Sitting Army
+00:24:04 cover Meat Wave ← Meat Wave
+00:24:04 cover Whores. ← Ruiner. / Clean.
+00:24:04 cover Hot Snakes ← Automatic Midnight
+00:24:04 cover The Peacocks ← Come With Us
+00:24:04 cover Sugar ← Copper Blue
+00:24:04 cover Ministry ← With Sympathy
+00:24:04 cover Off With Their Heads ← Hospitals
+00:24:04 cover NOFX ← Liberal Animation
+00:24:04 cover Fucked Up ← Epics in Minutes
+00:24:04 cover PLOSIVS ← PLOSIVS
+00:24:04 cover METZ ← METZ
+00:24:04 cover Dead to Me ← Cuban Ballerina
+00:24:04 cover Spiderbait ← ShashavaGlava
+00:24:05 cover Tiger Army ← Tiger Army
+00:24:05 cover pass done — 20/20 artists have art
+09:45:41 start — 1845 tracks, 1699 already resolved, 26 to do
+09:46:16 tracks 25/1845
+09:46:22 pass 1 complete — 1712/1845 matched (1725 unique title+artist)
+09:46:25 done — 329/324 artists resolved, output /Users/adriankingston/Claude projects/lykebrowsr/data/liked-music-enriched.json
+09:46:25 genre backfill — whitelist 2184 genres
+09:46:25 22 artists lacking genres
+09:46:36 discogs Th' Dudes: Upstream 404
+09:47:01 FOUL TIP ← post-punk, punk, rock, power pop (discogs)
+09:47:01 genre backfill done — filled 1/22
+09:47:01 label pass — 329 artists
+09:47:02 label pass done — 318/329 artists have labels
+09:47:02 cover pass — top 20 artists
+09:47:02 cover Bad Religion ← How Could Hell Be Any Worse?
+09:47:02 cover Swingin’ Utters ← The Streets of San Francisco
+09:47:02 cover White Lung ← It's the Evil
+09:47:05 cover The Bronx ← The Bronx
+09:47:05 cover Alkaline Trio ← Goddamnit
+09:47:05 cover Cobra Skulls ← Sitting Army
+09:47:05 cover Meat Wave ← Meat Wave
+09:47:05 cover Whores. ← Ruiner. / Clean.
+09:47:05 cover Hot Snakes ← Automatic Midnight
+09:47:05 cover The Peacocks ← Come With Us
+09:47:05 cover Sugar ← Copper Blue
+09:47:05 cover Ministry ← With Sympathy
+09:47:05 cover Off With Their Heads ← Hospitals
+09:47:05 cover NOFX ← Liberal Animation
+09:47:05 cover Fucked Up ← Epics in Minutes
+09:47:05 cover PLOSIVS ← PLOSIVS
+09:47:05 cover METZ ← METZ
+09:47:05 cover Dead to Me ← Cuban Ballerina
+09:47:05 cover Spiderbait ← ShashavaGlava
+09:47:05 cover Tiger Army ← Tiger Army
+09:47:05 cover pass done — 20/20 artists have art

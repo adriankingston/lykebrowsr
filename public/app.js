@@ -223,6 +223,30 @@
     } catch { /* datasets are optional */ }
   }
 
+  // The daily refresh fails loudly on the machine that runs it, but a
+  // notification you weren't there to see is no signal at all. This is the
+  // backstop: if a library hasn't been refreshed in a while, say so here,
+  // where you'll actually be looking. Catches every cause — dead cookie, Mac
+  // switched off, push that never happened.
+  const STALE_DAYS = 4;
+  async function freshnessCheck() {
+    try {
+      const { sets } = await api('/api/status');
+      const mine = sets.find((s) => s.name === 'liked-music');
+      if (!mine?.extracted) return;
+      const days = Math.floor((Date.now() - Date.parse(mine.extracted)) / 86400000);
+      if (days < STALE_DAYS) return;
+      const bar = document.createElement('div');
+      bar.className = 'stale';
+      bar.innerHTML = `<span><strong>Last refreshed ${days} days ago.</strong>
+        The daily update may have stopped — most likely the YouTube cookie has expired.
+        Run <code>./update.sh</code> to see the error.</span>
+        <button class="stale-x" aria-label="Dismiss">×</button>`;
+      document.body.insertBefore(bar, document.getElementById('view'));
+      bar.querySelector('.stale-x').addEventListener('click', () => bar.remove());
+    } catch { /* status is a nicety, never a blocker */ }
+  }
+
   // --- Two libraries ---------------------------------------------------------
   // Comparing Adrian's and Sharlene's likes. Everything here normalises for
   // size: her library is 1.4× his and holds 3× the artists, so any raw count
@@ -2411,4 +2435,5 @@
   }
 
   route();
+  freshnessCheck();
 })();
