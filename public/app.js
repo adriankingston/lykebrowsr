@@ -200,6 +200,7 @@
       const rest = sets.filter((s) => !['liked-music', 'liked-music-enriched', 'genre-graph'].includes(s.name));
       document.getElementById('datasets').innerHTML = `
         ${hasLiked ? `
+          <div class="home-panel">
           <h2 class="sect">Lykebrowsr: Your music Lyked</h2>
           <div class="dtabs home-views">
             <a class="dtab" href="#/data/liked-music">Overview</a>
@@ -207,8 +208,9 @@
             <a class="dtab" href="#/data/liked-music/bands">Bands</a>
             <a class="dtab" href="#/data/liked-music/graph">Graph</a>
             <a class="dtab" href="#/data/liked-music/styles">Styles</a>
+          </div>
+          <div class="home-search"></div>
           </div>` : ''}
-        <div class="home-search"></div>
         ${rest.length ? `
           <h2 class="sect">Other datasets</h2>
           <div class="rows">${rest.map((s) => `

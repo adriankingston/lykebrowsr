@@ -180,7 +180,7 @@ a:hover { color: var(--accent); }
 /* The title sits a third of the way down the viewport: 33vh less the header
    (59px) and #view's own top padding (26px). Padding, not margin, so the
    heading's margin can't collapse through it and skew the offset. */
-#view.home .datasets { margin-top: 0; padding-top: calc(33vh - 85px); }
+#view.home .datasets { margin-top: 0; padding-top: calc(33vh - 111px); }
 #view.home .sect {
   text-align: center;
   font-size: 26px;
@@ -213,7 +213,16 @@ a:hover { color: var(--accent); }
   opacity: 0;
   transition: opacity 1.4s ease;
 }
-.home-bg .hcov.on { opacity: 0.13; }
+.home-bg .hcov.on { opacity: 0.4; }
+/* Smoked-glass slab so the title and controls stay legible over the covers,
+   which can then sit much brighter behind it. */
+.home-panel {
+  background: rgba(6, 14, 18, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius);
+  padding: 26px 28px 30px;
+  backdrop-filter: blur(3px);
+}
 /* The data/ hint lives in the shared footer but only shows on home. */
 .foot-more { display: none; }
 #view.home ~ #credit .foot-more { display: inline; }
