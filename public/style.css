@@ -65,6 +65,7 @@
   --chip: #1c2f37;
   --shadow: 0 10px 30px rgba(0, 6, 8, .6);
   --radius: 0px;
+  --ctl-h: 42px;
 }
 
 * { box-sizing: border-box; }
@@ -514,10 +515,16 @@ a[data-ytlink] svg, .dtab svg { width: 12px; height: 12px; fill: currentColor; v
   color: var(--muted);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 6px 8px;
+  padding: 0 8px;
   font: inherit;
   font-size: 12px;
 }
+/* Every header control shares one height, so the service selector can't drift
+   away from the search box when either one's padding or font changes. */
+#svc.svc,
+#search-type,
+#q,
+.search-wrap .btn { height: var(--ctl-h); }
 #svc.svc:hover { color: var(--text); border-color: var(--accent); }
 
 /* Hover action cluster ([+] expand, [▶] YouTube Music), pinned by the node */
