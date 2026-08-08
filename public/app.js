@@ -154,37 +154,28 @@
 
   // --- Home ------------------------------------------------------------------
   // Decorative wall behind the home page: the first album's cover for each of
-  // the top-20 lyked artists, dimmed and inert. Covers hotlink from the Cover
-  // Art Archive; the release-group browses ride the polite queue and cache, so
-  // the wall assembles progressively on first visit and instantly after.
+  // the top-20 lyked artists, dimmed and inert.
+  //
+  // The URLs are precomputed nightly (`node resolve-liked.js --covers`) into
+  // data/home-covers.json, for two reasons. Resolving them live cost 20
+  // MusicBrainz browses, which on a cold cache took ~32s before the last cover
+  // could even start loading — and worse, they queued in the app's single
+  // polite MB lane, so a real lookup could wait 20s behind decoration. The
+  // stored URLs also point straight at archive.org, skipping the Cover Art
+  // Archive redirect (one origin, one connection, no per-image hop).
   async function homeCovers() {
     const bg = view.querySelector('.home-bg');
     if (!bg) return;
     try {
-      const d = await loadDataset('liked-music');
-      if (!d.enr || !view.querySelector('.home-bg')) return;
-      const top = mergedArtists(d).artists.sort((x, y) => y.n - x.n).slice(0, 20);
-      bg.innerHTML = top.map((_, i) => `<img class="hcov" data-i="${i}" alt="">`).join('');
-      top.forEach(async (a, i) => {
-        try {
-          const rgs = await api(`/api/browse?type=release-group&artist=${a.id}&limit=100`);
-          const albums = (rgs['release-groups'] || [])
-            .filter((g) => g['primary-type'] === 'Album')
-            .sort((x, y) => (x['first-release-date'] || '9999').localeCompare(y['first-release-date'] || '9999'))
-            .slice(0, 3); // fallbacks for first albums with no cover in CAA
-          const img = view.querySelector(`.hcov[data-i="${i}"]`);
-          if (!img || !albums.length) return;
-          let tryIdx = 0;
-          img.onerror = () => {
-            tryIdx += 1;
-            if (albums[tryIdx]) img.src = `https://coverartarchive.org/release-group/${albums[tryIdx].id}/front-250`;
-            else img.remove();
-          };
-          img.onload = () => img.classList.add('on');
-          img.src = `https://coverartarchive.org/release-group/${albums[0].id}/front-250`;
-        } catch { /* decorative — a missing tile is fine */ }
+      const { covers } = await api('/api/data?set=home-covers');
+      if (!covers?.length || !view.querySelector('.home-bg')) return;
+      bg.innerHTML = covers.map((c) => `<img class="hcov" alt="">`).join('');
+      bg.querySelectorAll('.hcov').forEach((img, i) => {
+        img.onload = () => img.classList.add('on');
+        img.onerror = () => img.remove();
+        img.src = covers[i].url;
       });
-    } catch { /* decorative */ }
+    } catch { /* decorative — no wall is fine */ }
   }
 
   async function renderHome() {
@@ -197,7 +188,7 @@
       const hasLiked = sets.some((s) => s.name === 'liked-music');
       // Support files (enrichment, genre graph) aren't destinations — keep
       // the home page pointed at things worth clicking.
-      const rest = sets.filter((s) => !['liked-music', 'liked-music-enriched', 'genre-graph'].includes(s.name));
+      const rest = sets.filter((s) => !['liked-music', 'liked-music-enriched', 'genre-graph', 'home-covers'].includes(s.name));
       document.getElementById('datasets').innerHTML = `
         ${hasLiked ? `
           <div class="home-panel">

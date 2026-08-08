@@ -52,6 +52,8 @@ ADDED=$(echo "$OUT" | grep -o '[0-9]* new' | head -1)
 node resolve-liked.js >> "$LOG" 2>&1 || fail "resolve pass 1 failed"
 node resolve-liked.js --genres >> "$LOG" 2>&1 || fail "genre backfill failed"
 node resolve-liked.js --labels >> "$LOG" 2>&1 || fail "label pass failed"
+# Decorative only — a failure here must not hold up the data.
+node resolve-liked.js --covers >> "$LOG" 2>&1 || echo "cover pass failed (non-fatal)" >> "$LOG"
 
 # Guard against shipping a truncated dataset: the count should never fall
 # sharply, and the resolver should have kept its match rate up.

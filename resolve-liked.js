@@ -278,9 +278,80 @@ async function resolveLabels() {
   log(`label pass done — ${withLabels}/${artists.length} artists have labels`);
 }
 
+// --- Home cover wall (--covers) ---------------------------------------------
+// The home page's 20 background covers used to cost 20 live MusicBrainz
+// browses, which (a) took ~32s on a cold cache and (b) monopolised the app's
+// single polite queue, so a real user's artist lookup queued behind decoration.
+// Precomputing here moves that cost to the nightly job.
+//
+// We also resolve each cover past the Cover Art Archive's first redirect:
+// coverartarchive.org 307s to archive.org, and each hop is a fresh TLS
+// handshake (~950ms). We pin the archive.org/download URL — but deliberately
+// NOT the final dn*/ia* storage node, whose hostnames rotate and can degrade
+// to 20s transfers when stale.
+async function resolveCovers() {
+  const liked = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'liked-music.json'), 'utf8'));
+  const st = load();
+  const counts = new Map();
+  for (const t of liked.tracks) {
+    const k = primaryName(t.artist);
+    counts.set(k, (counts.get(k) || 0) + 1);
+  }
+  // Roll up by resolved MBID so spelling variants count once (as the app does).
+  const byId = new Map();
+  for (const [name, a] of Object.entries(st.artists)) {
+    if (!a.id) continue;
+    const m = byId.get(a.id) || { id: a.id, name: a.mbName || name, n: 0 };
+    m.n += counts.get(name) || 0;
+    byId.set(a.id, m);
+  }
+  const top = [...byId.values()].sort((x, y) => y.n - x.n).slice(0, 20);
+  log(`cover pass — top ${top.length} artists`);
+
+  const covers = [];
+  for (const a of top) {
+    try {
+      const rgs = await mbFetch(`release-group?artist=${a.id}&limit=100`);
+      const albums = (rgs['release-groups'] || [])
+        .filter((g) => g['primary-type'] === 'Album')
+        .sort((x, y) => (x['first-release-date'] || '9999').localeCompare(y['first-release-date'] || '9999'))
+        .slice(0, 3);
+      let picked = null;
+      for (const g of albums) {
+        try {
+          const caa = await webFetch(`https://coverartarchive.org/release-group/${g.id}`);
+          const front = (caa.images || []).find((im) => im.front) || (caa.images || [])[0];
+          // The request 307s to archive.org's index.json, which carries no
+          // `release` field — the release MBID is in each image's URL.
+          const relId = (caa.release || front?.image || '').match(/release\/([0-9a-f-]{36})/)?.[1];
+          if (!front || !relId) continue;
+          picked = {
+            artist: a.name,
+            n: a.n,
+            releaseGroup: g.id,
+            title: g.title,
+            // Hop-2 URL: skips coverartarchive.org's redirect entirely.
+            url: `https://archive.org/download/mbid-${relId}/mbid-${relId}-${front.id}_thumb250.jpg`,
+          };
+          break;
+        } catch { /* no art for this album — try the next */ }
+      }
+      if (picked) { covers.push(picked); log(`cover ${a.name} ← ${picked.title}`); }
+      else log(`cover ${a.name}: no art on first ${albums.length} albums`);
+    } catch (e) { log(`cover ${a.name} failed: ${e.message}`); }
+  }
+  fs.writeFileSync(path.join(__dirname, 'data', 'home-covers.json'), JSON.stringify({
+    source: 'First-album covers for the top lyked artists (Cover Art Archive)',
+    updated: new Date().toISOString(),
+    covers,
+  }));
+  log(`cover pass done — ${covers.length}/${top.length} artists have art`);
+}
+
 async function main() {
   if (process.argv.includes('--genres')) return backfillGenres();
   if (process.argv.includes('--labels')) return resolveLabels();
+  if (process.argv.includes('--covers')) return resolveCovers();
   const liked = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'liked-music.json'), 'utf8'));
   const st = load(liked);
   // Tracks that have left the playlist leave the dataset; drop their entries
