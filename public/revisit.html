@@ -55,6 +55,9 @@ button.like:disabled{opacity:.5;cursor:default}
 .res.good{color:var(--accent)}
 .res.warn{color:var(--warn)}
 .res.ask{color:var(--gold)}
+.res .wrongband{color:var(--warn)}
+.res .no{background:var(--accent);color:var(--bg);border-color:var(--accent);font-weight:600}
+.res .yes{background:none;border-color:var(--line);color:var(--muted)}
 .res button{font-size:11px;padding:1px 7px;margin-left:2px}
 .res .dim{color:var(--muted)}
 .res .undo{color:var(--muted);text-decoration:underline;cursor:pointer}
@@ -187,11 +190,17 @@ async function likeSong(btn) {
   try {
     const r = await fetch("/api/ytm/find?artist=" + encodeURIComponent(artist) + "&title=" + encodeURIComponent(title));
     const d = await r.json();
-    if (!d.best) { res.textContent = "not on YouTube Music"; res.className = "res warn"; btn.disabled = false; return; }
+    if (!d.best) {
+      res.textContent = d.reason === "not on YouTube Music"
+        ? "this song is not on YouTube Music" : "nothing found";
+      res.className = "res warn"; btn.disabled = false; return;
+    }
     if (!d.confident) {
-      // A right title by the wrong band is the mistake worth guarding against.
-      res.innerHTML = "found <b>" + d.best.title + "</b> — " + d.best.meta.split(" • ")[0] +
-        ". Like it? <button class='yes'>yes</button> <button class='no'>no</button>";
+      // Right title, wrong band. Lead with the band, because that is the bit
+      // that is wrong and the bit that was previously easy to skim past.
+      res.innerHTML = "only found it by <b class='wrongband'>" + d.best.meta.split(" • ")[0] +
+        "</b>, not " + artist + " — <button class='no'>skip</button>" +
+        " <button class='yes'>like it anyway</button>";
       res.className = "res ask";
       res.querySelector(".yes").onclick = (ev) => { ev.stopPropagation(); doLike(btn, res, d.best); };
       res.querySelector(".no").onclick = (ev) => { ev.stopPropagation(); res.textContent = ""; btn.disabled = false; };
@@ -206,7 +215,8 @@ async function doLike(btn, res, best) {
   try {
     await fetch("/api/ytm/like?videoId=" + best.videoId, { method: "POST" });
     btn.textContent = "♥"; btn.classList.add("done"); btn.dataset.videoId = best.videoId;
-    res.innerHTML = "liked <span class='dim'>" + best.meta.split(" • ")[0] + "</span> · <a class='undo'>undo</a>";
+    res.innerHTML = "liked <b>" + best.title + "</b> — " + best.meta.split(" • ")[0] +
+      " · <a class='undo'>undo</a>";
     res.className = "res good";
     res.querySelector(".undo").onclick = (ev) => { ev.stopPropagation(); likeSong(btn); };
   } catch (e) { res.textContent = "like failed"; res.className = "res warn"; }

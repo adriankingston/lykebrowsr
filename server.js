@@ -449,11 +449,25 @@ async function apiYtmFind(req, res, url) {
   const ranked = ytmCandidates(data).slice(0, 12)
     .map((c) => ({ ...c, ...ytmScore(c, artist, title) }))
     .sort((a, b) => (b.titleScore + b.artistScore) - (a.titleScore + a.artistScore));
-  const best = ranked[0] || null;
-  // "Confident" means BOTH matched well — a right title by the wrong band is
-  // exactly the mistake that would quietly pollute the library.
-  const confident = !!best && best.titleScore >= 0.95 && best.artistScore >= 0.7;
-  sendJson(res, 200, { best, confident, alternatives: ranked.slice(1, 5) });
+  const top = ranked[0] || null;
+  // Two separate failures, and both were happening:
+  //  - right title, wrong band ("Vikings" by someone else entirely)
+  //  - right band, wrong song (Sommerset has 2 of his 46 tracks on the
+  //    service, so every other search returned a nearest-neighbour)
+  // Anything without a real title match is NOT a candidate at all — offering
+  // it as a "best guess" invited a yes and quietly liked the wrong track.
+  const plausible = !!top && top.titleScore >= 0.6;
+  const best = plausible ? top : null;
+  const confident = plausible && top.titleScore >= 0.95 && top.artistScore >= 0.7;
+  sendJson(res, 200, {
+    best,
+    confident,
+    // Say WHY, so the page can be honest rather than vague.
+    reason: !top ? 'nothing found'
+      : !plausible ? 'not on YouTube Music'
+        : confident ? 'match' : 'different artist',
+    alternatives: ranked.slice(1, 5),
+  });
 }
 
 async function apiYtmLike(req, res, url) {
