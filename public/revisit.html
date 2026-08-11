@@ -31,7 +31,7 @@ border-radius:6px;margin-bottom:7px;background:var(--surface);cursor:pointer}
 .mark.keep{background:rgba(255,209,102,.15);color:var(--gold)}
 .mark.skip{background:rgba(145,167,176,.15);color:var(--muted)}
 .mark.never{color:var(--warn)}
-.panel{border:1px solid var(--accent);border-top:0;border-radius:0 0 6px 6px;
+.panel{border:1px solid var(--line);border-radius:6px;
 background:var(--card);padding:14px 16px;margin:-8px 0 12px}
 .panel h3{margin:0 0 2px;font-size:15px}
 .panel .sub{color:var(--muted);font-size:12px;margin:0 0 12px}
@@ -64,6 +64,10 @@ button.like:disabled{opacity:.5;cursor:default}
 .offline{background:rgba(255,107,143,.12);border:1px solid var(--warn);color:var(--warn);
 padding:9px 12px;border-radius:5px;font-size:13px;margin-bottom:12px}
 .empty{color:var(--muted);padding:40px 0;text-align:center}
+.back{display:inline-block;color:var(--accent);text-decoration:none;font-size:14px;
+margin-bottom:12px;cursor:pointer}
+.back:hover{text-decoration:underline}
+.top.compact .controls,.top.compact .bar{display:none}
 .zone{color:var(--muted);font-size:12px;margin:0 0 8px;padding-bottom:6px;border-bottom:1px solid var(--line)}
 .zone b{color:var(--text)}
 .notezone{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line);display:flex;
@@ -82,7 +86,7 @@ let marks = {};
 try { marks = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) {}
 const save = () => localStorage.setItem(KEY, JSON.stringify(marks));
 
-let mode = "todo", openArtist = null, term = "", sort = "most";
+let mode = "todo", openArtist = null, term = "", sort = "most", listScroll = 0;
 const ytArtist = (a) => "https://music.youtube.com/search?q=" + encodeURIComponent(a);
 const ytSong = (a, t) => "https://music.youtube.com/search?q=" + encodeURIComponent(a + " " + t);
 const esc = (s) => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
@@ -100,9 +104,41 @@ function visible() {
   return list;
 }
 
+// The open band lives in the URL, so Back works and a band can be linked to.
+function bandFromHash() {
+  const m = location.hash.match(/^#band=(.*)$/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+function openBand(name) {
+  listScroll = window.scrollY;
+  location.hash = "band=" + encodeURIComponent(name);
+}
+function closeBand() {
+  // Back if we got here by opening a band, so the history doesn't pile up.
+  if (history.length > 1 && document.referrer !== "") history.back();
+  else location.hash = "";
+}
+window.addEventListener("hashchange", () => { openArtist = bandFromHash(); render(); });
+
 function render() {
-  const list = visible();
+  openArtist = bandFromHash();
   const main = document.getElementById("list");
+
+  // A band on its own page, rather than expanded inside a list of 160.
+  if (openArtist) {
+    const d = DATA.find(x => x.a === openArtist);
+    if (!d) { location.hash = ""; return; }
+    document.getElementById("short").innerHTML = "";
+    document.querySelector(".top").classList.add("compact");
+    main.innerHTML = '<a class="back" id="back">← back to the list</a>' + panel(d);
+    document.getElementById("back").onclick = (e) => { e.preventDefault(); closeBand(); };
+    wirePanel(main);
+    window.scrollTo(0, 0);
+    updateProgress();
+    return;
+  }
+  document.querySelector(".top").classList.remove("compact");
+  const list = visible();
   if (mode === "keep" && list.length) {
     const text = list.map(d => d.a + "\n" + d.s.map(s => "  " + s[0]).join("\n")).join("\n\n");
     document.getElementById("short").innerHTML =
@@ -135,12 +171,16 @@ function render() {
       '<span class="nm">' + esc(d.a) + "</span>" +
       '<span class="meta">' + d.s.length + " songs" + (d.b ? " &middot; " + d.b + " albums" : "") + "</span>" +
       badge + "</div>";
-    return row + (openArtist === d.a ? panel(d) : "");
+    return row;
   }).join("");
-  main.querySelectorAll(".row").forEach(r => r.onclick = () => {
-    openArtist = openArtist === r.dataset.a ? null : r.dataset.a; render();
-    const el = document.querySelector(".row.open"); if (el) el.scrollIntoView({block:"nearest"});
-  });
+  main.querySelectorAll(".row").forEach(r => r.onclick = () => openBand(r.dataset.a));
+  wirePanel(main);
+  // Restore where they were in the list when coming back from a band.
+  if (listScroll) { window.scrollTo(0, listScroll); listScroll = 0; }
+  updateProgress();
+}
+
+function wirePanel(main) {
   main.querySelectorAll("button.like").forEach(b => b.onclick = (e) => { e.stopPropagation(); likeSong(b); });
   main.querySelectorAll("[data-mark]").forEach(b => b.onclick = (e) => {
     e.stopPropagation();
@@ -148,10 +188,9 @@ function render() {
     marks[a] = marks[a] === m ? undefined : m;
     if (!marks[a]) delete marks[a];
     save();
-    if (mode === "todo" && marks[a]) openArtist = null;
+    if (openArtist && marks[a]) { closeBand(); return; } // decided → back to the list
     render();
   });
-  updateProgress();
 }
 
 function panel(d) {
