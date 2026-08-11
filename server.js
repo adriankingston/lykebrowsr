@@ -344,6 +344,8 @@ const routes = {
   'GET /api/notability': apiNotability,
   'GET /api/data': apiData,
   'GET /api/status': apiStatus,
+  'GET /api/ytm/find': apiYtmFind,
+  'POST /api/ytm/like': apiYtmLike,
 };
 
 // --- Server ------------------------------------------------------------------
@@ -357,6 +359,111 @@ const MIME = {
   '.png': 'image/png',
   '.woff2': 'font/woff2',
 };
+
+
+// --- YouTube Music, from the local machine only -------------------------------
+// Lets the "worth another listen?" page like a track without leaving the page.
+// Authenticated with Chrome's live cookies (chrome-cookies.js), so these routes
+// only work on Adrian's Mac — on Railway there is no Chrome and they 404.
+let ytm = null;
+try { ytm = require('./chrome-cookies'); } catch { /* not available */ }
+
+const YTM_ORIGIN = 'https://music.youtube.com';
+const YTM_KEY = 'AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30';
+const YTM_CONTEXT = { client: { clientName: 'WEB_REMIX', clientVersion: '1.20240101.01.00', hl: 'en', gl: 'NZ' } };
+
+async function ytmCall(endpoint, body) {
+  const { cookie } = ytm.youtubeCookieHeader();
+  const val = (n) => cookie.split(/;\s*/).find((c) => c.startsWith(n + '='))?.slice(n.length + 1);
+  const sapisid = val('SAPISID') || val('__Secure-3PAPISID');
+  const ts = Math.floor(Date.now() / 1000);
+  const hash = crypto.createHash('sha1').update(`${ts} ${sapisid} ${YTM_ORIGIN}`).digest('hex');
+  const res = await fetch(`${YTM_ORIGIN}/youtubei/v1/${endpoint}?key=${YTM_KEY}&prettyPrint=false`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `SAPISIDHASH ${ts}_${hash}`,
+      Cookie: cookie,
+      Origin: YTM_ORIGIN,
+      'X-Origin': YTM_ORIGIN,
+      'X-Goog-AuthUser': '0',
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+    },
+    body: JSON.stringify({ context: YTM_CONTEXT, ...body }),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`${endpoint} ${res.status}`);
+  return JSON.parse(text);
+}
+
+const ytmNorm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '')
+  .replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+
+// Title and artist are scored SEPARATELY, because the dangerous failure is a
+// perfect title by the wrong band ("Vikings" exists by several artists).
+function ytmScore(cand, artist, title) {
+  const t = ytmNorm(cand.title); const want = ytmNorm(title);
+  const m = ytmNorm(cand.meta); const wantA = ytmNorm(artist);
+  let titleScore = 0;
+  if (t === want) titleScore = 1;
+  else if (t.startsWith(want) || want.startsWith(t)) titleScore = 0.8;
+  else {
+    const a = new Set(t.split(' ')); const b = new Set(want.split(' '));
+    titleScore = [...b].filter((x) => a.has(x)).length / Math.max(b.size, 1);
+  }
+  let artistScore = 0;
+  if (m.includes(wantA)) artistScore = 1;
+  else {
+    const a = new Set(m.split(' ')); const b = new Set(wantA.split(' '));
+    artistScore = [...b].filter((x) => a.has(x)).length / Math.max(b.size, 1);
+  }
+  return { titleScore, artistScore };
+}
+
+function ytmCandidates(json) {
+  const out = [];
+  const walk = (o) => {
+    if (!o || typeof o !== 'object') return;
+    const r = o.musicResponsiveListItemRenderer;
+    if (r) {
+      const cols = (r.flexColumns || []).map((c) =>
+        c.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.map((x) => x.text).join('') ?? '');
+      const vid = r.playlistItemData?.videoId
+        || r.overlay?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer
+          ?.playNavigationEndpoint?.watchEndpoint?.videoId;
+      if (vid) out.push({ videoId: vid, title: cols[0] || '', meta: cols[1] || '' });
+    }
+    for (const k in o) walk(o[k]);
+  };
+  walk(json);
+  return out;
+}
+
+async function apiYtmFind(req, res, url) {
+  if (!ytm) return sendJson(res, 404, { error: 'Local only' });
+  const artist = (url.searchParams.get('artist') || '').trim();
+  const title = (url.searchParams.get('title') || '').trim();
+  if (!artist || !title) return sendJson(res, 400, { error: 'Need artist and title' });
+  const data = await ytmCall('search', {
+    query: `${artist} ${title}`, params: 'EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D' });
+  const ranked = ytmCandidates(data).slice(0, 12)
+    .map((c) => ({ ...c, ...ytmScore(c, artist, title) }))
+    .sort((a, b) => (b.titleScore + b.artistScore) - (a.titleScore + a.artistScore));
+  const best = ranked[0] || null;
+  // "Confident" means BOTH matched well — a right title by the wrong band is
+  // exactly the mistake that would quietly pollute the library.
+  const confident = !!best && best.titleScore >= 0.95 && best.artistScore >= 0.7;
+  sendJson(res, 200, { best, confident, alternatives: ranked.slice(1, 5) });
+}
+
+async function apiYtmLike(req, res, url) {
+  if (!ytm) return sendJson(res, 404, { error: 'Local only' });
+  const videoId = (url.searchParams.get('videoId') || '').trim();
+  const remove = url.searchParams.get('remove') === '1';
+  if (!/^[\w-]{6,20}$/.test(videoId)) return sendJson(res, 400, { error: 'Bad videoId' });
+  await ytmCall(remove ? 'like/removelike' : 'like/like', { target: { videoId } });
+  sendJson(res, 200, { ok: true, videoId, removed: remove });
+}
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
