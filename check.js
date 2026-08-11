@@ -26,11 +26,26 @@ let failures = 0;
 const fail = (s) => { failures += 1; console.log(bad(s)); };
 
 async function cookieWorks() {
-  const cookie = (process.env.YT_COOKIE || '').trim();
-  if (!cookie) return fail('YT_COOKIE is not set — see .env.example');
-  const val = (n) => cookie.split(/;\s*/).find((c) => c.startsWith(n + '='))?.slice(n.length + 1);
+  let live;
+  try {
+    const { youtubeCookieHeader } = require('./chrome-cookies');
+    live = youtubeCookieHeader();
+  } catch (e) {
+    fail(e.message.split('\n')[0]);
+    if (/[Kk]eychain/.test(e.message)) {
+      console.log(meh('run in Terminal and click "Always Allow":'));
+      console.log(meh('  security find-generic-password -w -s "Chrome Safe Storage" -a Chrome'));
+    }
+    return;
+  }
+  if (live.ageMinutes != null && live.ageMinutes > 180) {
+    console.log(meh(`Chrome's session is ${live.ageMinutes} min old — the job will wait for a fresher one`));
+  } else {
+    console.log(ok(`Chrome's cookies are readable (${live.count} cookies, ${live.ageMinutes ?? '?'} min old)`));
+  }
+  const val = (n) => live.cookie.split(/;\s*/).find((c) => c.startsWith(n + '='))?.slice(n.length + 1);
   const sapisid = val('SAPISID') || val('__Secure-3PAPISID');
-  if (!sapisid) return fail('YT_COOKIE has no SAPISID — the copied header was incomplete');
+  if (!sapisid) return fail('Chrome has no SAPISID — sign in to YouTube Music in Chrome');
   const ts = Math.floor(Date.now() / 1000);
   const hash = crypto.createHash('sha1').update(`${ts} ${sapisid} https://music.youtube.com`).digest('hex');
   try {
@@ -39,7 +54,7 @@ async function cookieWorks() {
       headers: {
         'Content-Type': 'application/json',
         Authorization: `SAPISIDHASH ${ts}_${hash}`,
-        Cookie: cookie,
+        Cookie: live.cookie,
         Origin: 'https://music.youtube.com',
         'X-Origin': 'https://music.youtube.com',
         'X-Goog-AuthUser': '0',
@@ -53,10 +68,9 @@ async function cookieWorks() {
     const text = await res.text();
     const loggedIn = (text.match(/"key":"logged_in","value":"(\d)"/) || [])[1];
     if (loggedIn === '1' || /musicPlaylistShelfRenderer/.test(text)) {
-      return console.log(ok('YouTube cookie authenticates'));
+      return console.log(ok('YouTube accepts them — authenticated'));
     }
-    fail('YouTube cookie has EXPIRED — re-copy it from a fresh incognito window');
-    console.log(meh('see .env.example for the incognito recipe; the window must be closed, not signed out'));
+    fail('YouTube says signed out — open YouTube Music in Chrome and sign in');
   } catch (e) {
     fail(`couldn't reach YouTube (${e.message})`);
   }
@@ -77,7 +91,7 @@ function gitState() {
 function schedule() {
   try {
     const out = execSync('launchctl list', { encoding: 'utf8' });
-    if (/com\.lykebrowsr\.update/.test(out)) console.log(ok('daily job is loaded (08:30)'));
+    if (/com\.lykebrowsr\.update/.test(out)) console.log(ok('scheduled job is loaded (2-hourly, 07:30–21:30)'));
     else fail('launchd job not loaded — launchctl load ~/Library/LaunchAgents/com.lykebrowsr.update.plist');
   } catch { console.log(meh('could not read launchctl')); }
 }

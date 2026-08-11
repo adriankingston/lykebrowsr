@@ -13,6 +13,7 @@ cd "$(dirname "$0")" || exit 1
 
 export PATH="/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 LOG="update.log"
+STAMP=".last-refresh"
 
 say() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOG"; }
 notify() {
@@ -39,18 +40,49 @@ if [ -f "$LOG" ] && [ "$(wc -c < "$LOG")" -gt 200000 ]; then
   tail -n 400 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
 fi
 
+# Already published today? Then this run has nothing to do. The job fires
+# every couple of hours so it can catch a moment when Chrome's session is
+# fresh; it should only do real work once.
+if [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$(date +%F)" ]; then
+  say "already refreshed today — nothing to do"
+  exit 0
+fi
+
 OUT=$(node extract-yt-likes.js 2>&1)
 EXIT=$?
 echo "$OUT" >> "$LOG"
+# 75 = EX_TEMPFAIL: Chrome's cookies are too stale to use. Not a failure —
+# just not now. Stay quiet and let the next run try.
+if [ $EXIT -eq 75 ]; then
+  say "postponed — Chrome's session is stale; will retry"
+  exit 0
+fi
 if [ $EXIT -ne 0 ]; then
   case "$OUT" in
-    *YT_COOKIE*|*unauthenticated*|*expired*) fail "YouTube cookies need refreshing" ;;
+    *[Kk]eychain*) fail "grant keychain access: security find-generic-password -w -s \"Chrome Safe Storage\" -a Chrome" ;;
+    *signed\ out*|*sign\ in*|*unauthenticated*|*revoked*) fail "sign in to YouTube Music in Chrome" ;;
     *) fail "extract failed — see update.log" ;;
   esac
 fi
 
 # Nothing new? Then there's nothing to resolve, commit or deploy.
 if git diff --quiet -- data/liked-music.json; then
+  date +%F > "$STAMP"
+  # Heartbeat: proves the updater RAN, which "extracted" can't — that only
+  # moves when the likes change, so a quiet week looked identical to a
+  # fortnight of failures.
+  node -e '
+    const fs = require("fs");
+    const f = "data/refresh-heartbeat.json";
+    const today = new Date().toISOString().slice(0, 10);
+    let prev = {};
+    try { prev = JSON.parse(fs.readFileSync(f, "utf8")); } catch {}
+    if (prev.lastRun !== today) fs.writeFileSync(f, JSON.stringify({ lastRun: today }));
+  ' >> "$LOG" 2>&1
+  if ! git diff --quiet -- data/refresh-heartbeat.json; then
+    git add data/refresh-heartbeat.json
+    git commit -q -m "Data: refresh heartbeat" >> "$LOG" 2>&1 && git push -q origin main >> "$LOG" 2>&1
+  fi
   say "no change — done"
   exit 0
 fi
@@ -82,5 +114,6 @@ git commit -q -m "Data: automatic liked-music refresh (${ADDED:-new tracks})
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>" >> "$LOG" 2>&1 || fail "commit failed"
 git push -q origin main >> "$LOG" 2>&1 || fail "push failed — check the GitHub credential in Keychain"
 
+date +%F > "$STAMP"
 say "published: ${ADDED:-changes} — Railway will redeploy"
 notify "Liked music updated — ${ADDED:-changes}"

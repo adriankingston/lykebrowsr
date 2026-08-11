@@ -311,7 +311,9 @@ async function apiStatus(req, res) {
       });
     } catch { /* unreadable — skip */ }
   }
-  sendJson(res, 200, { sets, now: new Date().toISOString() });
+  let heartbeat = null;
+  try { heartbeat = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'refresh-heartbeat.json'), 'utf8')).lastRun; } catch { /* none yet */ }
+  sendJson(res, 200, { sets, heartbeat, now: new Date().toISOString() });
 }
 
 async function apiData(req, res, url) {

@@ -228,19 +228,22 @@
   // backstop: if a library hasn't been refreshed in a while, say so here,
   // where you'll actually be looking. Catches every cause — dead cookie, Mac
   // switched off, push that never happened.
-  const STALE_DAYS = 4;
+  const STALE_DAYS = 2;
   async function freshnessCheck() {
     try {
-      const { sets } = await api('/api/status');
+      const { sets, heartbeat } = await api('/api/status');
       const mine = sets.find((s) => s.name === 'liked-music');
       if (!mine?.extracted) return;
-      const days = Math.floor((Date.now() - Date.parse(mine.extracted)) / 86400000);
+      // Judge by the last successful RUN, not the last change: the extractor
+      // deliberately doesn't rewrite the file on a quiet day, so a fortnight
+      // of failures and a fortnight of not liking anything looked identical.
+      const last = heartbeat ? Date.parse(heartbeat + 'T12:00:00Z') : Date.parse(mine.extracted);
+      const days = Math.floor((Date.now() - Math.max(last, Date.parse(mine.extracted))) / 86400000);
       if (days < STALE_DAYS) return;
       const bar = document.createElement('div');
       bar.className = 'stale';
-      bar.innerHTML = `<span><strong>Last refreshed ${days} days ago.</strong>
-        The daily update may have stopped — most likely the YouTube cookie has expired.
-        Run <code>./update.sh</code> to see the error.</span>
+      bar.innerHTML = `<span><strong>Not refreshed for ${days} days.</strong>
+        The updater has stopped — run <code>npm run check</code> to see why.</span>
         <button class="stale-x" aria-label="Dismiss">×</button>`;
       document.body.insertBefore(bar, document.getElementById('view'));
       bar.querySelector('.stale-x').addEventListener('click', () => bar.remove());

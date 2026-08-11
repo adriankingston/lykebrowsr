@@ -3,9 +3,8 @@
 //
 // This is the same innertube call the web player makes (POST browse with
 // browseId VLLM, then continuation tokens), authenticated the same way: a
-// SAPISIDHASH computed from your SAPISID cookie. Give it the cookies once
-// (YT_COOKIE in .env — see .env.example) and every refresh after that is
-// just `npm run update`.
+// SAPISIDHASH computed from your SAPISID cookie — read live from the running
+// Chrome each time (see chrome-cookies.js), so nothing goes stale in a file.
 //
 // Tracks carry a `firstSeen` date, preserved across refreshes, so the app can
 // show what's new. Tracks that leave the playlist leave the dataset.
@@ -30,59 +29,34 @@ const ORIGIN = 'https://music.youtube.com';
 const KEY = process.env.YT_INNERTUBE_KEY || 'AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30';
 const CONTEXT = { client: { clientName: 'WEB_REMIX', clientVersion: '1.20240101.01.00', hl: 'en', gl: 'NZ' } };
 
-// `pbpaste | node extract-yt-likes.js --save-cookie` — takes the cookie header
-// (or a whole "Copy as cURL") on stdin and writes YT_COOKIE into .env, so the
-// value never has to survive a round trip through shell quoting.
-if (process.argv.includes('--save-cookie')) {
-  const raw = fs.readFileSync(0, 'utf8').trim();
-  const m = raw.match(/-b\s+'([^']+)'/) || raw.match(/-H\s+'cookie:\s*([^']+)'/i)
-    || raw.match(/^\s*cookie:\s*(.+)$/im);
-  const val = (m ? m[1] : raw).replace(/\s+/g, ' ').trim();
-  if (!/SAPISID=/.test(val)) {
-    console.error('That does not look like a YouTube cookie header (no SAPISID). Nothing written.');
-    process.exit(1);
+// Cookies come from the running Chrome, fresh, every time — see
+// chrome-cookies.js for why storing them was the bug.
+const { youtubeCookieHeader, CookieError } = require('./chrome-cookies');
+
+// Exit 75 (EX_TEMPFAIL) means "not now, try later" — used when Chrome's
+// cookies are too stale to be safe. update.sh treats it as a quiet retry
+// rather than a failure worth shouting about.
+const EX_TEMPFAIL = 75;
+const MAX_COOKIE_AGE_MIN = 180;
+
+let cookie;
+try {
+  const live = youtubeCookieHeader();
+  cookie = live.cookie;
+  if (live.ageMinutes != null && live.ageMinutes > MAX_COOKIE_AGE_MIN) {
+    console.error(`Chrome's YouTube session was last refreshed ${live.ageMinutes} minutes ago — `
+      + 'too stale to use safely. Open Chrome (and visit YouTube Music) and this will run.');
+    process.exit(EX_TEMPFAIL);
   }
-  const envPath = path.join(__dirname, '.env');
-  let env = '';
-  try { env = fs.readFileSync(envPath, 'utf8'); } catch { /* new .env */ }
-  const line = `YT_COOKIE='${val.replace(/'/g, "'\\''")}'`;
-  env = /^YT_COOKIE=/m.test(env) ? env.replace(/^YT_COOKIE=.*$/m, line)
-    : env.replace(/\n*$/, '\n') + line + '\n';
-  fs.writeFileSync(envPath, env, { mode: 0o600 });
-  const names = val.split(/;\s*/).map((c) => c.split('=')[0]);
-  console.log(`saved YT_COOKIE to .env (${names.length} cookies: ${names.slice(0, 8).join(', ')}…)`);
-  process.exit(0);
+  console.log(`using Chrome's live cookies (${live.count} cookies, `
+    + `${live.ageMinutes == null ? 'age unknown' : live.ageMinutes + ' min old'})`);
+} catch (e) {
+  console.error(e instanceof CookieError ? e.message : `Couldn't read Chrome's cookies: ${e.message}`);
+  process.exit(e instanceof CookieError && e.kind === 'keychain' ? 1 : 1);
 }
 
-const cookie = (process.env.YT_COOKIE || '').trim();
-if (!cookie) {
-  console.error(`No YT_COOKIE set (or the saved one has stopped authenticating).
-
-Use an INCOGNITO window. Google rotates the session cookies of any window you
-keep using, and a copy taken from your normal browsing session gets invalidated
-within a day or so. A private window you never touch again keeps working.
-
-  1. Open an incognito window (⇧⌘N) and sign in at https://music.youtube.com
-  2. DevTools (⌥⌘I) → Network → filter "browse" → click the playlist, or scroll,
-     until a /youtubei/v1/browse row appears.
-  3. Right-click that row → Copy → Copy as cURL.
-  4. Run:  pbpaste | node extract-yt-likes.js --save-cookie
-  5. CLOSE the incognito window WITHOUT signing out. Signing out kills the
-     session; closing it simply leaves it parked.
-
-Treat that line like a password — it authenticates as your Google account.
-.env is gitignored and written 0600.`);
-  process.exit(1);
-}
-
-const cookieVal = (name) =>
-  cookie.split(/;\s*/).find((c) => c.startsWith(name + '='))?.slice(name.length + 1);
-
+const cookieVal = (name) => cookie.split(/;\s*/).find((c) => c.startsWith(name + '='))?.slice(name.length + 1);
 const sapisid = cookieVal('SAPISID') || cookieVal('__Secure-3PAPISID') || cookieVal('__Secure-1PAPISID');
-if (!sapisid) {
-  console.error('YT_COOKIE has no SAPISID / __Secure-3PAPISID — copy the full cookie header, not a fragment.');
-  process.exit(1);
-}
 
 const authHeader = () => {
   const ts = Math.floor(Date.now() / 1000);
@@ -139,7 +113,7 @@ const keyOf = (t) => `${t.title}|${t.artist}`;
 async function main() {
   const first = await post({ browseId: 'VLLM' });
   const shelf = findShelf(first);
-  if (!shelf) throw new Error('no playlist shelf in response — cookies likely expired; re-copy YT_COOKIE');
+  if (!shelf) throw new Error('no playlist shelf — Chrome\'s YouTube session is signed out or revoked; open YouTube Music in Chrome and sign in');
   const tracks = parseItems(shelf.contents);
   let token = findCont(shelf.contents);
   let guard = 0;
@@ -153,7 +127,7 @@ async function main() {
     process.stdout.write(`\r  ${tracks.length} tracks…`);
   }
   process.stdout.write('\r');
-  if (!tracks.length) throw new Error('0 tracks — the request went out unauthenticated; re-copy YT_COOKIE');
+  if (!tracks.length) throw new Error('0 tracks — the request went out unauthenticated; sign in to YouTube Music in Chrome');
 
   // Carry firstSeen across refreshes; today for anything we've not seen before.
   let prev = { tracks: [] };
