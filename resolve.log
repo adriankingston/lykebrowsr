@@ -396,3 +396,34 @@
 09:47:05 cover Spiderbait ← ShashavaGlava
 09:47:05 cover Tiger Army ← Tiger Army
 09:47:05 cover pass done — 20/20 artists have art
+06:55:10 start — 1862 tracks, 1725 already resolved, 12 to do
+06:55:25 pass 1 complete — 1729/1862 matched (1737 unique title+artist)
+06:55:30 done — 330/325 artists resolved, output /Users/adriankingston/Claude projects/lykebrowsr/data/liked-music-enriched.json
+06:55:30 genre backfill — whitelist 2184 genres
+06:55:30 21 artists lacking genres
+06:55:41 discogs Th' Dudes: Upstream 404
+06:55:53 genre backfill done — filled 0/21
+06:55:53 label pass — 330 artists
+06:55:55 label pass done — 319/330 artists have labels
+06:55:55 cover pass — top 20 artists
+06:55:55 cover Bad Religion ← How Could Hell Be Any Worse?
+06:55:55 cover Swingin’ Utters ← The Streets of San Francisco
+06:55:55 cover White Lung ← It's the Evil
+06:55:55 cover The Bronx ← The Bronx
+06:55:55 cover Alkaline Trio ← Goddamnit
+06:55:55 cover Cobra Skulls ← Sitting Army
+06:55:55 cover Meat Wave ← Meat Wave
+06:55:55 cover Whores. ← Ruiner. / Clean.
+06:55:55 cover Hot Snakes ← Automatic Midnight
+06:55:55 cover The Peacocks ← Come With Us
+06:55:55 cover Ministry ← With Sympathy
+06:55:55 cover Sugar ← Copper Blue
+06:55:55 cover Off With Their Heads ← Hospitals
+06:55:55 cover NOFX ← Liberal Animation
+06:55:55 cover Fucked Up ← Epics in Minutes
+06:55:55 cover PLOSIVS ← PLOSIVS
+06:55:55 cover METZ ← METZ
+06:55:55 cover Dead to Me ← Cuban Ballerina
+06:55:55 cover Spiderbait ← ShashavaGlava
+06:55:55 cover Tiger Army ← Tiger Army
+06:55:55 cover pass done — 20/20 artists have art
