@@ -427,3 +427,91 @@
 06:55:55 cover Spiderbait ← ShashavaGlava
 06:55:55 cover Tiger Army ← Tiger Army
 06:55:55 cover pass done — 20/20 artists have art
+21:33:00 start — 1990 tracks, 1737 already resolved, 128 to do
+21:49:29 track 6 "Suture Self" failed: fetch failed
+22:06:13 track 10 "Everything for You" failed: fetch failed
+22:07:55 tracks 25/1990
+22:15:43 track 31 "Weapons Of Mass Deception" failed: fetch failed
+22:16:14 tracks 50/1990
+22:35:54 track 56 "Gutter Black" failed: fetch failed
+22:35:54 track 57 "Darkest Days" failed: fetch failed
+22:35:55 track 58 "More Depalma, Less Fellini" failed: fetch failed
+22:35:56 track 59 "Where's Your Head At" failed: fetch failed
+22:35:57 track 60 "Cool to Be a Punk" failed: fetch failed
+22:35:58 track 61 "Negative Charge" failed: fetch failed
+22:36:00 track 62 "Affco" failed: fetch failed
+22:36:27 tracks 75/1990
+22:37:30 tracks 100/1990
+22:38:34 tracks 125/1990
+22:38:38 pass 1 complete — 1846/1990 matched (1865 unique title+artist)
+22:39:38 artists 20/389
+22:40:17 artists 40/389
+22:40:49 artists 60/389
+22:41:02 done — 398/393 artists resolved, output /Users/adriankingston/Claude projects/lykebrowsr/data/liked-music-enriched.json
+22:41:02 genre backfill — whitelist 2184 genres
+22:41:02 27 artists lacking genres
+22:41:13 discogs Th' Dudes: Upstream 404
+22:41:31 Michael Franti ← funk (wikidata)
+22:41:39 Balance ← hardcore punk, rock, punk (discogs)
+22:41:40 Dash Rip Rock ← alternative rock, alternative country (wikidata)
+22:41:52 Hello Sailor ← rock, garage rock, pop rock (discogs)
+22:42:03 Hellride ← garage rock, punk, rock (discogs)
+22:42:03 genre backfill done — filled 5/27
+22:42:03 label pass — 398 artists
+22:42:24 labels 340/398
+22:42:55 labels 360/398
+22:43:14 labels 380/398
+22:43:42 label pass done — 386/398 artists have labels
+22:43:42 cover pass — top 20 artists
+22:43:42 cover Bad Religion ← How Could Hell Be Any Worse?
+22:43:42 cover Swingin’ Utters ← The Streets of San Francisco
+22:43:42 cover White Lung ← It's the Evil
+22:43:42 cover The Bronx ← The Bronx
+22:43:42 cover Alkaline Trio ← Goddamnit
+22:43:42 cover Cobra Skulls ← Sitting Army
+22:43:42 cover Meat Wave ← Meat Wave
+22:43:42 cover Whores. ← Ruiner. / Clean.
+22:43:42 cover Hot Snakes ← Automatic Midnight
+22:43:42 cover The Peacocks ← Come With Us
+22:43:42 cover Ministry ← With Sympathy
+22:43:42 cover Sugar ← Copper Blue
+22:43:42 cover Off With Their Heads ← Hospitals
+22:43:42 cover NOFX ← Liberal Animation
+22:43:42 cover Fucked Up ← Epics in Minutes
+22:43:42 cover PLOSIVS ← PLOSIVS
+22:43:42 cover METZ ← METZ
+22:43:46 cover Cracker ← Cracker
+22:43:46 cover Dead to Me ← Cuban Ballerina
+22:43:46 cover Spiderbait ← ShashavaGlava
+22:43:46 cover pass done — 20/20 artists have art
+08:45:05 start — 2010 tracks, 1865 already resolved, 20 to do
+08:45:50 pass 1 complete — 1866/2010 matched (1885 unique title+artist)
+08:45:50 done — 398/393 artists resolved, output /Users/adriankingston/Claude projects/lykebrowsr/data/liked-music-enriched.json
+08:45:51 genre backfill — whitelist 2184 genres
+08:45:51 22 artists lacking genres
+08:46:01 discogs Th' Dudes: Upstream 404
+08:46:17 genre backfill done — filled 0/22
+08:46:17 label pass — 398 artists
+08:46:17 label pass done — 386/398 artists have labels
+08:46:17 cover pass — top 20 artists
+08:46:17 cover Bad Religion ← How Could Hell Be Any Worse?
+08:46:17 cover Swingin’ Utters ← The Streets of San Francisco
+08:46:17 cover White Lung ← It's the Evil
+08:46:17 cover The Bronx ← The Bronx
+08:46:17 cover Alkaline Trio ← Goddamnit
+08:46:17 cover Cobra Skulls ← Sitting Army
+08:46:17 cover Meat Wave ← Meat Wave
+08:46:17 cover Whores. ← Ruiner. / Clean.
+08:46:17 cover Hot Snakes ← Automatic Midnight
+08:46:17 cover The Peacocks ← Come With Us
+08:46:17 cover Ministry ← With Sympathy
+08:46:17 cover Sugar ← Copper Blue
+08:46:17 cover Off With Their Heads ← Hospitals
+08:46:17 cover NOFX ← Liberal Animation
+08:46:17 cover Fucked Up ← Epics in Minutes
+08:46:17 cover PLOSIVS ← PLOSIVS
+08:46:17 cover METZ ← METZ
+08:46:17 cover Cracker ← Cracker
+08:46:21 cover Beastie Boys ← Licensed to Ill
+08:46:21 cover Dead to Me ← Cuban Ballerina
+08:46:22 cover pass done — 20/20 artists have art

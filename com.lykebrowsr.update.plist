@@ -8,10 +8,11 @@
   <array>
     <string>/Users/adriankingston/Claude projects/lykebrowsr/update.sh</string>
   </array>
-  <!-- Every two hours through the day, not once at 08:30. The extractor reads
-       Chrome's live cookies and refuses if they're more than 3h old, so it
-       needs several chances to catch a moment when Chrome has been awake.
-       update.sh does real work only once a day (see .last-refresh). -->
+  <!-- Every two hours through the day, not once at 08:30. Two reasons: the
+       extractor reads Chrome's live cookies and refuses if they're more than
+       3h old, so it needs several chances to catch a moment when Chrome has
+       been awake; and anything liked during the day should reach the site the
+       same day. Each run publishes only if the likes actually changed. -->
   <key>StartCalendarInterval</key>
   <array>
     <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>

@@ -14,6 +14,7 @@ cd "$(dirname "$0")" || exit 1
 export PATH="/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 LOG="update.log"
 STAMP=".last-refresh"
+LOCK=".update.lock"
 
 say() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOG"; }
 notify() {
@@ -25,7 +26,37 @@ fail() {
   exit 1
 }
 
+# Heartbeat: proves the updater RAN, which "extracted" can't — that only moves
+# when the likes change, so a quiet week looked identical to a fortnight of
+# failures. Written on every successful run, busy or quiet.
+beat() {
+  node -e '
+    const fs = require("fs");
+    const f = "data/refresh-heartbeat.json";
+    const today = new Date().toISOString().slice(0, 10);
+    let prev = {};
+    try { prev = JSON.parse(fs.readFileSync(f, "utf8")); } catch {}
+    if (prev.lastRun !== today) fs.writeFileSync(f, JSON.stringify({ lastRun: today }));
+  ' >> "$LOG" 2>&1
+}
+
 say "--- update starting ---"
+
+# A big batch can take over an hour to resolve, which is longer than the gap
+# between scheduled runs. Two passes resolving into the same files at once
+# would interleave their writes, so a run that arrives early stands down.
+if ! mkdir "$LOCK" 2>/dev/null; then
+  HELD=$(cat "$LOCK/pid" 2>/dev/null)
+  if [ -n "$HELD" ] && kill -0 "$HELD" 2>/dev/null; then
+    say "a run (pid $HELD) is still going — standing down"
+    exit 0
+  fi
+  say "clearing a stale lock left by pid ${HELD:-unknown}"
+  rm -rf "$LOCK"
+  mkdir "$LOCK" 2>/dev/null || { say "could not take the lock — standing down"; exit 0; }
+fi
+echo $$ > "$LOCK/pid"
+trap 'rm -rf "$LOCK"' EXIT
 
 # The job commits wherever HEAD happens to be but always pushes main. If the
 # repo is left on a feature branch, the commit lands there, `git push main`
@@ -40,14 +71,10 @@ if [ -f "$LOG" ] && [ "$(wc -c < "$LOG")" -gt 200000 ]; then
   tail -n 400 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
 fi
 
-# Already published today? Then this run has nothing to do. The job fires
-# every couple of hours so it can catch a moment when Chrome's session is
-# fresh; it should only do real work once.
-if [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$(date +%F)" ]; then
-  say "already refreshed today — nothing to do"
-  exit 0
-fi
-
+# Every scheduled run pulls the playlist — it's one cheap call, and it's the
+# only way something liked at lunchtime reaches the site before tomorrow.
+# What it costs to publish scales with what's new, not with how often we look:
+# the resolve passes below are skipped entirely when nothing changed.
 OUT=$(node extract-yt-likes.js 2>&1)
 EXIT=$?
 echo "$OUT" >> "$LOG"
@@ -68,17 +95,7 @@ fi
 # Nothing new? Then there's nothing to resolve, commit or deploy.
 if git diff --quiet -- data/liked-music.json; then
   date +%F > "$STAMP"
-  # Heartbeat: proves the updater RAN, which "extracted" can't — that only
-  # moves when the likes change, so a quiet week looked identical to a
-  # fortnight of failures.
-  node -e '
-    const fs = require("fs");
-    const f = "data/refresh-heartbeat.json";
-    const today = new Date().toISOString().slice(0, 10);
-    let prev = {};
-    try { prev = JSON.parse(fs.readFileSync(f, "utf8")); } catch {}
-    if (prev.lastRun !== today) fs.writeFileSync(f, JSON.stringify({ lastRun: today }));
-  ' >> "$LOG" 2>&1
+  beat
   if ! git diff --quiet -- data/refresh-heartbeat.json; then
     git add data/refresh-heartbeat.json
     git commit -q -m "Data: refresh heartbeat" >> "$LOG" 2>&1 && git push -q origin main >> "$LOG" 2>&1
@@ -108,7 +125,11 @@ if (rate < 0.7) throw new Error("match rate " + (rate * 100).toFixed(0) + "% —
 console.log("sanity ok: " + liked.tracks.length + " tracks, " + (rate * 100).toFixed(0) + "% matched");
 ' >> "$LOG" 2>&1 || fail "sanity check failed — data NOT published"
 
-git add data/liked-music.json data/liked-music-enriched.json || fail "git add failed"
+beat
+# home-covers.json too: the cover pass regenerates it on every run, so leaving
+# it out froze the live cover wall at whatever was last committed by hand.
+git add data/liked-music.json data/liked-music-enriched.json \
+        data/refresh-heartbeat.json data/home-covers.json || fail "git add failed"
 git commit -q -m "Data: automatic liked-music refresh (${ADDED:-new tracks})
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>" >> "$LOG" 2>&1 || fail "commit failed"
